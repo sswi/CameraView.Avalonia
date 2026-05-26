@@ -22,13 +22,6 @@ public static class CameraProviderFactory
         cachedProvider = new Platforms.Android.AndroidCameraProvider(context);
         return cachedProvider;
     }
-
-    public static ICameraPermissions CreatePermissions(ICameraProvider provider)
-    {
-        if (provider is ICameraPermissions perms)
-            return perms;
-        return new DefaultCameraPermissions();
-    }
 #elif IOS
     public static ICameraProvider Create()
     {
@@ -41,6 +34,13 @@ public static class CameraProviderFactory
             "CameraView only supports Android and iOS platforms.");
     }
 #endif
+
+    public static ICameraPermissions CreatePermissions(ICameraProvider provider)
+    {
+        if (provider is ICameraPermissions perms)
+            return perms;
+        return new DefaultCameraPermissions();
+    }
 
     private class DefaultCameraPermissions : ICameraPermissions
     {
