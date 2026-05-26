@@ -4,42 +4,23 @@ namespace CameraView;
 
 public static class CameraProviderFactory
 {
-    private static Func<ICameraProvider>? androidFactory;
+#if ANDROID
     private static ICameraProvider? cachedProvider;
-
-    public static void RegisterAndroidProvider(Func<ICameraProvider> factory)
-    {
-        androidFactory = factory;
-    }
 
     public static void SetAndroidActivity(object activity)
     {
         if (cachedProvider is ICameraActivityAware aware)
-        {
             aware.SetActivity(activity);
-        }
     }
 
     public static ICameraProvider Create()
     {
-#if ANDROID
         if (cachedProvider != null)
             return cachedProvider;
 
-        if (androidFactory != null)
-        {
-            cachedProvider = androidFactory();
-            return cachedProvider;
-        }
-
-        throw new InvalidOperationException(
-            "Android camera provider not registered.");
-#elif IOS
-        return new Platforms.iOS.iOSCameraProvider();
-#else
-        throw new PlatformNotSupportedException(
-            "CameraView only supports Android and iOS platforms.");
-#endif
+        var context = global::Android.App.Application.Context;
+        cachedProvider = new Platforms.Android.AndroidCameraProvider(context);
+        return cachedProvider;
     }
 
     public static ICameraPermissions CreatePermissions(ICameraProvider provider)
@@ -48,6 +29,18 @@ public static class CameraProviderFactory
             return perms;
         return new DefaultCameraPermissions();
     }
+#elif IOS
+    public static ICameraProvider Create()
+    {
+        return new Platforms.iOS.iOSCameraProvider();
+    }
+#else
+    public static ICameraProvider Create()
+    {
+        throw new PlatformNotSupportedException(
+            "CameraView only supports Android and iOS platforms.");
+    }
+#endif
 
     private class DefaultCameraPermissions : ICameraPermissions
     {

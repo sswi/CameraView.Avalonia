@@ -15,13 +15,6 @@ public class Application : AvaloniaAndroidApplication<App>
 
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
-        // Register CameraView Android provider before Avalonia starts
-        CameraView.CameraProviderFactory.RegisterAndroidProvider(() =>
-        {
-            var context = global::Android.App.Application.Context;
-            return new AndroidCameraProvider(context);
-        });
-
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
     }

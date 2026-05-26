@@ -12,9 +12,9 @@ using CameraView.Models;
 using CameraView.Services;
 using SkiaSharp;
 
-namespace CameraView.Demo.Android;
+namespace CameraView.Platforms.Android;
 
-internal class AndroidCameraProvider : Services.ICameraProvider, ICameraPermissions, ICameraActivityAware
+public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermissions, ICameraActivityAware
 {
     private readonly Context appContext;
     private global::Android.App.Activity? currentActivity;
@@ -329,41 +329,4 @@ internal class AndroidCameraProvider : Services.ICameraProvider, ICameraPermissi
         this.cameraProvider?.Dispose();
     }
 
-    /// <summary>
-    /// Minimal ILifecycleOwner that reports the lifecycle as always started.
-    /// </summary>
-    private class ForeverLifecycleOwner : Java.Lang.Object, ILifecycleOwner
-    {
-        private readonly LifecycleRegistry registry;
-
-        public ForeverLifecycleOwner()
-        {
-            this.registry = new LifecycleRegistry(this);
-            this.registry.HandleLifecycleEvent(Lifecycle.Event.OnStart);
-            this.registry.HandleLifecycleEvent(Lifecycle.Event.OnResume);
-        }
-
-        public Lifecycle Lifecycle => this.registry;
-    }
-
-    /// <summary>
-    /// Observes CameraX IZoomState changes and updates the provider's zoom properties.
-    /// </summary>
-    private class ZoomObserver : Java.Lang.Object, IObserver
-    {
-        private readonly Action<IZoomState> onChanged;
-
-        public ZoomObserver(Action<IZoomState> onChanged)
-        {
-            this.onChanged = onChanged;
-        }
-
-        public void OnChanged(Java.Lang.Object? value)
-        {
-            if (value is IZoomState state)
-            {
-                this.onChanged(state);
-            }
-        }
-    }
 }

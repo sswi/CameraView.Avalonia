@@ -5,9 +5,9 @@ using Android.Runtime;
 using AndroidX.Camera.Core;
 using SkiaSharp;
 
-namespace CameraView.Demo.Android;
+namespace CameraView.Platforms.Android;
 
-[Register("cameraview/demo/android/FrameAnalyzer")]
+[Register("cameraview/platforms/android/FrameAnalyzer")]
 public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
 {
     private readonly Action<SKBitmap> onFrameReceived;

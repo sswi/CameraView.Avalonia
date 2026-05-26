@@ -2,9 +2,9 @@ using System;
 using Android.Runtime;
 using AndroidX.Camera.Core;
 
-namespace CameraView.Demo.Android;
+namespace CameraView.Platforms.Android;
 
-[Register("cameraview/demo/android/PhotoCaptureCallback")]
+[Register("cameraview/platforms/android/PhotoCaptureCallback")]
 public class PhotoCaptureCallback : Java.Lang.Object, ImageCapture.IOnImageSavedCallback
 {
     private readonly Action<ImageCapture.OutputFileResults> onSaved;
