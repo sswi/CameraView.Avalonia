@@ -1,0 +1,57 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:CameraView">
+    <Design.PreviewWith>
+        <Border Padding="20">
+            <local:CameraViewControl Width="360" Height="640" />
+        </Border>
+    </Design.PreviewWith>
+
+    <Style Selector="local|CameraViewControl">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Grid
+                    x:Name="RootGrid"
+                    Background="Black"
+                    ClipToBounds="True">
+                    <!--  Layer 1: Camera preview image  -->
+                    <Image
+                        x:Name="PART_PreviewImage"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Stretch="UniformToFill" />
+
+                    <!--  Layer 2: Focus indicator  -->
+                    <Canvas x:Name="PART_FocusCanvas" IsHitTestVisible="False">
+                        <Ellipse
+                            x:Name="PART_FocusIndicator"
+                            Width="80"
+                            Height="80"
+                            IsVisible="False"
+                            Opacity="1.0"
+                            Stroke="#FF4081"
+                            StrokeThickness="2">
+                            <Ellipse.RenderTransform>
+                                <ScaleTransform ScaleX="1.0" ScaleY="1.0" />
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </Canvas>
+
+                    <!--  Layer 3b: FPS debug overlay  -->
+                    <TextBlock
+                        x:Name="PART_FpsText"
+                        Margin="8"
+                        Padding="4,2"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Background="#80000000"
+                        FontSize="12"
+                        Foreground="#FF00FF00"
+                        IsVisible="{TemplateBinding DebugMode}" />
+
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+</Styles>

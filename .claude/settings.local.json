@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)",
+      "Bash(Get-ChildItem -Recurse -Depth 0 -Name \"K:\\\\2026\\\\Sources\\\\CameraScanner.Maui-develop\")",
+      "WebSearch",
+      "PowerShell(dotnet --version)",
+      "Bash(rtk find *)"
+    ]
+  }
+}

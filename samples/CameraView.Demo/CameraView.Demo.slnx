@@ -1,0 +1,12 @@
+<Solution>
+  <Project Path="../../src/CameraView/CameraView.csproj" />
+  <Project Path="CameraView.Demo.Android/CameraView.Demo.Android.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="CameraView.Demo.Browser/CameraView.Demo.Browser.csproj" />
+  <Project Path="CameraView.Demo.Desktop/CameraView.Demo.Desktop.csproj" />
+  <Project Path="CameraView.Demo.iOS/CameraView.Demo.iOS.csproj">
+    <Deploy />
+  </Project>
+  <Project Path="CameraView.Demo/CameraView.Demo.csproj" />
+</Solution>

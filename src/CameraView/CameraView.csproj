@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;net10.0-android;net10.0-ios</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>CameraView</RootNamespace>
+
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.*" />
+    <PackageReference Include="SkiaSharp" Version="3.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="**\*.axaml" />
+  </ItemGroup>
+
+  <!-- Android-specific packages -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
+    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" Version="1.5.*" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.5.*" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.View" Version="1.5.*" />
+  </ItemGroup>
+
+  <!-- Platform-specific source exclusions -->
+  <ItemGroup>
+    <Compile Remove="Platforms\Android\**" Condition="!$(TargetFramework.Contains('-android'))" />
+    <Compile Remove="Platforms\iOS\**" Condition="!$(TargetFramework.Contains('-ios'))" />
+  </ItemGroup>
+
+</Project>

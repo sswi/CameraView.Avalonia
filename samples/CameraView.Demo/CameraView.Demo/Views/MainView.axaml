@@ -1,0 +1,90 @@
+<UserControl
+    x:Class="CameraView.Demo.Views.MainView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:cv="using:CameraView"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:CameraView.Demo.ViewModels"
+    d:DesignHeight="640"
+    d:DesignWidth="360"
+    x:DataType="vm:MainViewModel"
+    mc:Ignorable="d">
+
+    <Grid RowDefinitions="*,Auto">
+
+        <!--  Camera View  -->
+        <cv:CameraViewControl
+            x:Name="CameraControl"
+            Grid.Row="0"
+            CameraEnabled="{Binding IsCameraRunning}"
+            DebugMode="{Binding DebugMode}"
+            PhotoCapturedCommand="{Binding OnPhotoCapturedCommand}" />
+
+
+
+
+        <!--  Controls overlay  -->
+        <StackPanel
+            Grid.Row="1"
+            Margin="16"
+            Background="#E0000000"
+            Spacing="12">
+
+            <!--  Status  -->
+            <TextBlock
+                HorizontalAlignment="Center"
+                FontSize="14"
+                Foreground="White"
+                Text="{Binding StatusText}"
+                TextWrapping="Wrap" />
+
+            <!--  Button row  -->
+            <StackPanel
+                HorizontalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="16">
+                <Button
+                    Padding="16,8"
+                    Background="#FF4081"
+                    Command="{Binding StartCameraCommand}"
+                    Content="Start Camera"
+                    CornerRadius="20"
+                    Foreground="White"
+                    IsVisible="{Binding $self.IsVisible}" />
+
+                <Button
+                    Padding="16,8"
+                    Background="#FF4081"
+                    Command="{Binding TakePhotoCommand}"
+                    Content="Take Photo"
+                    CornerRadius="24"
+                    Foreground="White" />
+
+                <Button
+                    Padding="16,8"
+                    Background="#40000000"
+                    Command="{Binding SwitchCameraCommand}"
+                    Content="Switch"
+                    CornerRadius="20"
+                    Foreground="White" />
+
+                <Button
+                    Padding="16,8"
+                    Background="#40000000"
+                    Command="{Binding ToggleTorchCommand}"
+                    Content="Torch"
+                    CornerRadius="20"
+                    Foreground="White" />
+                <Button
+                    Padding="16,8"
+                    Background="#40000000"
+                    Command="{Binding ToggleDebugCommand}"
+                    Content="FPS"
+                    CornerRadius="20"
+                    Foreground="White" />
+            </StackPanel>
+        </StackPanel>
+
+    </Grid>
+</UserControl>
