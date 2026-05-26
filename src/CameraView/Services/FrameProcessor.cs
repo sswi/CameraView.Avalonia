@@ -1,26 +1,29 @@
-using System;
 using System.Diagnostics;
-using System.IO;
-using Avalonia.Threading;
-using Avalonia.Media.Imaging;
-using SkiaSharp;
 
 namespace CameraView.Services;
 
+/// <summary>
+/// 帧处理器 — 将相机原始帧缩放、编码为 Avalonia Bitmap，并统计 FPS
+/// </summary>
 public class FrameProcessor
 {
-    public event Action<Avalonia.Media.Imaging.Bitmap>? FrameReady;
+    /// <summary>帧就绪事件（UI 线程回调）</summary>
+    public event Action<Bitmap>? FrameReady;
+    /// <summary>FPS 更新事件</summary>
     public event Action<string>? FpsUpdated;
 
-    private Avalonia.Media.Imaging.Bitmap? currentBitmap;
+    private Bitmap? currentBitmap;
     private readonly Stopwatch fpsStopwatch = Stopwatch.StartNew();
     private int frameCount;
     private string fpsText = "";
 
-    public Avalonia.Media.Imaging.Bitmap? ProcessedBitmap => this.currentBitmap;
-    public string FpsText => this.fpsText;
+    public Bitmap? ProcessedBitmap => currentBitmap;
+    public string FpsText => fpsText;
 
-    public void ProcessPreviewFrame(SKBitmap rawFrame, int previewWidth, int previewHeight)
+    /// <summary>
+    /// 处理预览帧：缩放 → JPEG 编码 → Avalonia Bitmap（后台线程执行重活，UI 线程只做赋值）
+    /// </summary>
+    public void ProcessPreviewFrame(SKBitmap rawFrame)
     {
         try
         {
@@ -32,33 +35,36 @@ public class FrameProcessor
 
             using var resized = rawFrame.Resize(
                 new SKImageInfo(newW, newH, SKColorType.Bgra8888),
-                SKFilterQuality.Medium);
+                new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
 
             using var skImage = SKImage.FromBitmap(resized);
             using var encoded = skImage.Encode(SKEncodedImageFormat.Jpeg, 85);
             var jpegBytes = encoded.ToArray();
 
-            this.frameCount++;
-            if (this.fpsStopwatch.Elapsed.TotalSeconds >= 1.0)
+            using var stream = new MemoryStream(jpegBytes);
+            var bmp = new Bitmap(stream);
+
+            // FPS 统计
+            frameCount++;
+            if (fpsStopwatch.Elapsed.TotalSeconds >= 1.0)
             {
-                double fps = this.frameCount / this.fpsStopwatch.Elapsed.TotalSeconds;
-                this.fpsText = $"{fps:F0} FPS | {newW}x{newH}";
-                this.frameCount = 0;
-                this.fpsStopwatch.Restart();
-                var f = this.fpsText;
-                Dispatcher.UIThread.Post(() => this.FpsUpdated?.Invoke(f));
+                double fps = frameCount / fpsStopwatch.Elapsed.TotalSeconds;
+                fpsText = $"{fps:F0} FPS | {newW}x{newH}";
+                frameCount = 0;
+                fpsStopwatch.Restart();
+                var f = fpsText;
+                Dispatcher.UIThread.Post(() => FpsUpdated?.Invoke(f));
             }
 
+            // UI 线程：仅赋值和触发事件
             Dispatcher.UIThread.Post(() =>
             {
                 try
                 {
-                    using var stream = new MemoryStream(jpegBytes);
-                    var bmp = new Avalonia.Media.Imaging.Bitmap(stream);
-                    var old = this.currentBitmap;
-                    this.currentBitmap = bmp;
+                    var old = currentBitmap;
+                    currentBitmap = bmp;
                     old?.Dispose();
-                    this.FrameReady?.Invoke(bmp);
+                    FrameReady?.Invoke(bmp);
                 }
                 catch { }
             });

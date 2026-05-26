@@ -33,6 +33,9 @@ internal class iOSCameraProvider : ICameraProvider
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
     public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0]; // 4032x3024
     public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
+    public float MinExposureCompensation { get; private set; }
+    public float MaxExposureCompensation { get; private set; }
+    public float ExposureCompensation { get; private set; }
 
     public Task SetPhotoResolutionAsync(PhotoResolution resolution)
     {
@@ -84,7 +87,7 @@ internal class iOSCameraProvider : ICameraProvider
 
                 await this.UpdateCameraAsync();
                 this.UpdateOutput();
-                this.UpdateMinMaxZoom();
+                this.UpdateDeviceCapabilities();
 
                 this.session.StartRunning();
                 this.started = true;
@@ -227,11 +230,38 @@ internal class iOSCameraProvider : ICameraProvider
         return Task.CompletedTask;
     }
 
+    public Task SetExposureCompensationAsync(float ev)
+    {
+        if (this.captureDevice == null) return Task.CompletedTask;
+
+        try
+        {
+            this.captureDevice.LockForConfiguration(out _);
+            try
+            {
+                this.MinExposureCompensation = this.captureDevice.MinExposureTargetBias;
+                this.MaxExposureCompensation = this.captureDevice.MaxExposureTargetBias;
+
+                var clamped = Math.Clamp(ev, this.MinExposureCompensation, this.MaxExposureCompensation);
+                this.captureDevice.SetExposureTargetBias(clamped, null);
+                this.ExposureCompensation = clamped;
+            }
+            finally
+            {
+                this.captureDevice.UnlockForConfiguration();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Exposure failed: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task SetFlashModeAsync(FlashMode mode)
     {
         this.FlashMode = mode;
-
-        // Store flash mode for next photo capture — applied in TakePhotoAsync
         return Task.CompletedTask;
     }
 
@@ -323,13 +353,16 @@ internal class iOSCameraProvider : ICameraProvider
             CoreFoundation.DispatchQueue.DefaultGlobalQueue);
     }
 
-    private void UpdateMinMaxZoom()
+    private void UpdateDeviceCapabilities()
     {
         if (this.captureDevice == null) return;
 
         this.MinZoomFactor = MathF.Round((float)this.captureDevice.MinAvailableVideoZoomFactor, 1);
         this.MaxZoomFactor = MathF.Round((float)this.captureDevice.MaxAvailableVideoZoomFactor, 1);
         this.CurrentZoomFactor = MathF.Round((float)this.captureDevice.VideoZoomFactor, 1);
+        this.MinExposureCompensation = this.captureDevice.MinExposureTargetBias;
+        this.MaxExposureCompensation = this.captureDevice.MaxExposureTargetBias;
+        this.ExposureCompensation = this.captureDevice.ExposureTargetBias;
     }
 
     private class PhotoCaptureDelegate : AVCapturePhotoCaptureDelegate

@@ -14,14 +14,14 @@ public class SyncHelper
     {
         get
         {
-            lock (this.syncRoot)
-                return this.currentTask != null;
+            lock (syncRoot)
+                return currentTask != null;
         }
     }
 
     public async Task RunOnceAsync(Func<Task> task)
     {
-        if (!this.TryBeginExecution(out var execution))
+        if (!TryBeginExecution(out var execution))
             return;
 
         try
@@ -36,32 +36,32 @@ public class SyncHelper
         }
         finally
         {
-            this.EndExecution(execution.Task);
+            EndExecution(execution.Task);
         }
     }
 
     private bool TryBeginExecution(out TaskCompletionSource<bool> execution)
     {
-        lock (this.syncRoot)
+        lock (syncRoot)
         {
-            if (this.currentTask != null)
+            if (currentTask != null)
             {
                 execution = null!;
                 return false;
             }
 
             execution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            this.currentTask = execution.Task;
+            currentTask = execution.Task;
             return true;
         }
     }
 
     private void EndExecution(Task<bool> executionTask)
     {
-        lock (this.syncRoot)
+        lock (syncRoot)
         {
-            if (ReferenceEquals(this.currentTask, executionTask))
-                this.currentTask = null;
+            if (ReferenceEquals(currentTask, executionTask))
+                currentTask = null;
         }
     }
 }

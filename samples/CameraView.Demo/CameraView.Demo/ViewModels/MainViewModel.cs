@@ -27,10 +27,14 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool _debugMode = true;
 
+    public IRelayCommand<PhotoCaptureResult?> OnPhotoCapturedCommand { get; }
+
     public CameraViewControl? CameraControl { get; set; }
 
     public MainViewModel()
     {
+        this.OnPhotoCapturedCommand = new RelayCommand<PhotoCaptureResult?>(OnPhotoCaptured);
+
         // Create the platform camera provider (pass null for default context)
         this.cameraProvider = CameraProviderFactory.Create();
         this.cameraPermissions = CameraProviderFactory.CreatePermissions(this.cameraProvider);
@@ -102,7 +106,6 @@ public partial class MainViewModel : ViewModelBase
             this.CameraControl.DebugMode = this.DebugMode;
     }
 
-    [RelayCommand]
     private void OnPhotoCaptured(PhotoCaptureResult? result)
     {
         if (result == null) return;

@@ -1,11 +1,19 @@
 namespace CameraView.Models;
 
+/// <summary>
+/// 照片分辨率预设
+/// </summary>
+/// <param name="Width">宽度</param>
+/// <param name="Height">高度</param>
+/// <param name="Label">显示名称</param>
 public record PhotoResolution(int Width, int Height, string Label)
 {
+    /// <summary>宽高比</summary>
     public double AspectRatio => (double)this.Width / this.Height;
 
     public override string ToString() => $"{this.Label} ({this.Width}x{this.Height})";
 
+    /// <summary>默认可选分辨率列表</summary>
     public static readonly PhotoResolution[] DefaultPresets =
     [
         new(4032, 3024, "4:3 12MP"),

@@ -1,7 +1,4 @@
-using System;
-using Android.Runtime;
 using AndroidX.Camera.Core;
-using AndroidX.Lifecycle;
 
 namespace CameraView.Platforms.Android;
 

@@ -1,23 +1,13 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
-using Android.Content;
-using Android.Content.PM;
+using System.Diagnostics;
+using Activity = Android.App.Activity;
 using AndroidX.Camera.Core;
-using AndroidX.Camera.Lifecycle;
-using AndroidX.Core.Content;
-using AndroidX.Lifecycle;
-using CameraView.Models;
-using CameraView.Services;
-using SkiaSharp;
 
 namespace CameraView.Platforms.Android;
 
 public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermissions, ICameraActivityAware
 {
     private readonly Context appContext;
-    private global::Android.App.Activity? currentActivity;
+    private Activity? currentActivity;
 
     private ProcessCameraProvider? cameraProvider;
     private ImageCapture? imageCapture;
@@ -36,6 +26,9 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
     public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0]; // 4032x3024
     public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
+    public float MinExposureCompensation { get; private set; }
+    public float MaxExposureCompensation { get; private set; }
+    public float ExposureCompensation { get; private set; }
 
     public ICameraPermissions Permissions => this;
 
@@ -50,7 +43,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 
     public void SetActivity(object activity)
     {
-        this.currentActivity = activity as global::Android.App.Activity;
+        this.currentActivity = activity as Activity;
     }
 
     // --- ICameraPermissions ---
@@ -58,7 +51,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     public Task<bool> CheckPermissionAsync()
     {
         var ctx = this.currentActivity ?? this.appContext;
-        var result = ContextCompat.CheckSelfPermission(ctx, global::Android.Manifest.Permission.Camera);
+        var result = ContextCompat.CheckSelfPermission(ctx, Manifest.Permission.Camera);
         return Task.FromResult(result == Permission.Granted);
     }
 
@@ -72,9 +65,9 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 
         try
         {
-            global::AndroidX.Core.App.ActivityCompat.RequestPermissions(
+            ActivityCompat.RequestPermissions(
                 this.currentActivity,
-                [global::Android.Manifest.Permission.Camera],
+                [Manifest.Permission.Camera],
                 0);
             return false;
         }
@@ -240,6 +233,22 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 
     public Task SetFocusAsync(float normalizedX, float normalizedY)
     {
+        if (this.camera?.CameraControl == null) return Task.CompletedTask;
+
+        try
+        {
+            var factory = new global::AndroidX.Camera.Core.SurfaceOrientedMeteringPointFactory(1f, 1f);
+            var point = factory.CreatePoint(normalizedX, normalizedY, 0.15f);
+            var action = new FocusMeteringAction.Builder(point, FocusMeteringAction.FlagAf | FocusMeteringAction.FlagAe)
+                .SetAutoCancelDuration(3, Java.Util.Concurrent.TimeUnit.Seconds!)
+                .Build();
+            this.camera.CameraControl.StartFocusAndMetering(action);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Focus failed: {ex.Message}");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -277,11 +286,45 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     {
         this.PhotoResolution = resolution;
 
-        // Restart preview to apply new resolution
         if (this.cameraProvider != null && this.IsInitialized)
         {
             this.cameraProvider.UnbindAll();
             return this.StartPreviewAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task SetExposureCompensationAsync(float ev)
+    {
+        if (this.camera?.CameraControl == null) return Task.CompletedTask;
+
+        try
+        {
+            var exposureState = this.camera.CameraInfo?.ExposureState;
+            if (exposureState == null) return Task.CompletedTask;
+
+            // Query range on first use
+            if (this.MinExposureCompensation == 0 && this.MaxExposureCompensation == 0)
+            {
+                this.MinExposureCompensation = ((Java.Lang.Integer)exposureState.ExposureCompensationRange.Lower!).IntValue();
+                this.MaxExposureCompensation = ((Java.Lang.Integer)exposureState.ExposureCompensationRange.Upper!).IntValue();
+            }
+
+            // Convert EV to integer index
+            var rational = (global::Android.Util.Rational)exposureState.ExposureCompensationStep!;
+            float step = (float)rational.Numerator / rational.Denominator;
+            int index = step > 0 ? (int)Math.Round(ev / step) : 0;
+            int lower = ((Java.Lang.Integer)exposureState.ExposureCompensationRange.Lower!).IntValue();
+            int upper = ((Java.Lang.Integer)exposureState.ExposureCompensationRange.Upper!).IntValue();
+            index = Math.Clamp(index, lower, upper);
+
+            this.camera.CameraControl.SetExposureCompensationIndex(index);
+            this.ExposureCompensation = index * step;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Exposure failed: {ex.Message}");
         }
 
         return Task.CompletedTask;

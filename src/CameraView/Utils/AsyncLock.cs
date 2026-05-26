@@ -12,14 +12,14 @@ internal class AsyncLock : IDisposable
 
     internal AsyncLock()
     {
-        this.releaser = Task.FromResult(new Releaser(this));
+        releaser = Task.FromResult(new Releaser(this));
     }
 
     internal Task<Releaser> LockAsync()
     {
-        var wait = this.semaphore.WaitAsync();
+        var wait = semaphore.WaitAsync();
         return wait.IsCompleted
-            ? this.releaser
+            ? releaser
             : wait.ContinueWith(
                 (_, state) => new Releaser((AsyncLock)state!),
                 this,
@@ -30,10 +30,10 @@ internal class AsyncLock : IDisposable
 
     public void Dispose()
     {
-        if (!this.disposed)
+        if (!disposed)
         {
-            this.semaphore.Dispose();
-            this.disposed = true;
+            semaphore.Dispose();
+            disposed = true;
         }
     }
 
@@ -48,7 +48,7 @@ internal class AsyncLock : IDisposable
 
         public void Dispose()
         {
-            this.toRelease.semaphore.Release();
+          toRelease.semaphore.Release();
         }
     }
 }

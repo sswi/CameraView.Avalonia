@@ -1,9 +1,5 @@
-using System;
-using System.Threading.Tasks;
 using Android.Graphics;
-using Android.Runtime;
 using AndroidX.Camera.Core;
-using SkiaSharp;
 
 namespace CameraView.Platforms.Android;
 
@@ -11,7 +7,6 @@ namespace CameraView.Platforms.Android;
 public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
 {
     private readonly Action<SKBitmap> onFrameReceived;
-    private uint frameCount;
 
     public FrameAnalyzer(Action<SKBitmap> onFrameReceived)
     {
