@@ -22,7 +22,7 @@ public class CameraViewControl : TemplatedControl
 
     // ========== 服务实例 ==========
     private ICameraProvider? cameraProvider;
-    private IDeviceOrientationProvider? orientationProvider;
+    private readonly IDeviceOrientationProvider? orientationProvider;
     private readonly FrameProcessor? frameProcessor;
     private DateTime lastOrientationUpdate;
     private bool isFocusing;
@@ -170,9 +170,7 @@ public class CameraViewControl : TemplatedControl
 
         // 初始化设备朝向传感器
         orientationProvider = CameraProviderFactory.CreateOrientationProvider();
-        if (orientationProvider != null)
-        {
-            orientationProvider.OrientationChanged += o =>
+        orientationProvider?.OrientationChanged += o =>
             {
                 var now = DateTime.Now;
                 if ((now - lastOrientationUpdate).TotalMilliseconds > 100)  // 限流 ~10Hz
@@ -181,7 +179,6 @@ public class CameraViewControl : TemplatedControl
                     DeviceOrientation = o;
                 }
             };
-        }
     }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -281,7 +278,7 @@ public class CameraViewControl : TemplatedControl
     /// <summary>FrameProcessor 处理好帧 → 更新 UI</summary>
     private void OnFrameReady(Bitmap bitmap)
     {
-        if (previewImage != null) previewImage.Source = bitmap;
+        previewImage?.Source = bitmap;
     }
 
     /// <summary>FPS 更新 → 仅 DebugMode 时显示</summary>
@@ -400,7 +397,7 @@ public class CameraViewControl : TemplatedControl
         e.Handled = true;
     }
 
-    /// <summary>手指抬起：判定是否为点击（<300ms + <10px 移动）→ 对焦</summary>
+    /// <summary>手指抬起：判定是否为点击（300ms + 10px 移动）→ 对焦</summary>
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         activePointers.Remove(e.Pointer.Id);
@@ -437,29 +434,30 @@ public class CameraViewControl : TemplatedControl
         Canvas.SetLeft(focusIndicator, point.X - 40);
         Canvas.SetTop(focusIndicator, point.Y - 40);
 
-        // 阶段 1：缩小入场 1.5 → 1.0 (150ms)
-        for (int i = 0; i < 10; i++)
+        // 阶段 1：缩小入场 1.5 → 1.0 (150ms, 60fps)
+        for (int i = 0; i < 9; i++)
         {
-            double scale = 1.5 - (0.5 * i / 10.0);
+            double scale = 1.5 - (0.5 * i / 9.0);
             focusIndicator.RenderTransform = new ScaleTransform(scale, scale);
-            await Task.Delay(15);
+            await Task.Delay(16);
         }
         focusIndicator.RenderTransform = new ScaleTransform(1.0, 1.0);
 
-        // 阶段 2：等待对焦完成（与 AutoCancelDuration 匹配，共 ~2s）
-        for (int p = 0; p < 10; p++)
+        // 阶段 2：等待对焦完成（~2s，60fps 呼吸）
+        for (int p = 0; p < 80; p++)
         {
-            double scale = 1.0 + (0.08 * Math.Sin(p * Math.PI / 5.0));
+            double t = p * Math.PI / 30.0;
+            double scale = 1.0 + 0.06 * Math.Sin(t);
             focusIndicator.RenderTransform = new ScaleTransform(scale, scale);
-            await Task.Delay(200);
+            await Task.Delay(16);
         }
         focusIndicator.RenderTransform = new ScaleTransform(1.0, 1.0);
 
-        // 阶段 3：淡出 (200ms)
-        for (int i = 0; i < 10; i++)
+        // 阶段 3：淡出 (200ms, 60fps)
+        for (int i = 0; i < 12; i++)
         {
-            focusIndicator.Opacity = 1.0 - (i / 10.0);
-            await Task.Delay(20);
+            focusIndicator.Opacity = 1.0 - (i / 12.0);
+            await Task.Delay(16);
         }
         focusIndicator.Opacity = 0.0;
         focusIndicator.IsVisible = false;
