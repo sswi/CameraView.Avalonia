@@ -25,6 +25,7 @@ public class CameraViewControl : TemplatedControl
     private IDeviceOrientationProvider? orientationProvider;
     private readonly FrameProcessor? frameProcessor;
     private DateTime lastOrientationUpdate;
+    private bool isFocusing;
 
     // ========================================================================
     //  可绑定属性
@@ -399,7 +400,7 @@ public class CameraViewControl : TemplatedControl
         e.Handled = true;
     }
 
-    /// <summary>手指抬起：判定是否为点击（< 300ms + < 10px 移动）→ 对焦</summary>
+    /// <summary>手指抬起：判定是否为点击（<300ms + <10px 移动）→ 对焦</summary>
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         activePointers.Remove(e.Pointer.Id);
@@ -410,11 +411,11 @@ public class CameraViewControl : TemplatedControl
             var elapsed = DateTime.Now - potentialTapTime;
             var distance = Math.Sqrt(Math.Pow(point.X - potentialTapPoint.X, 2) + Math.Pow(point.Y - potentialTapPoint.Y, 2));
 
-            if (elapsed.TotalMilliseconds < 300 && distance < 10)
+            if (elapsed.TotalMilliseconds < 300 && distance < 10 && !isFocusing)
             {
                 float nx = (float)(point.X / Math.Max(Bounds.Width, 1));
                 float ny = (float)(point.Y / Math.Max(Bounds.Height, 1));
-                ShowFocusAnimation(point);
+                _ = ShowFocusAnimationAsync(point);
                 _ = cameraProvider?.SetFocusAsync(nx, ny);
             }
         }
@@ -423,13 +424,14 @@ public class CameraViewControl : TemplatedControl
     }
 
     // ========================================================================
-    //  对焦动画（三阶段：缩小入场 → 呼吸脉冲 → 淡出）
+    //  对焦动画（缩小入场 → 呼吸等待 → 淡出，对焦期间阻止重复点击）
     // ========================================================================
 
-    private async void ShowFocusAnimation(Point point)
+    private async Task ShowFocusAnimationAsync(Point point)
     {
         if (focusIndicator == null) return;
 
+        isFocusing = true;
         focusIndicator.IsVisible = true;
         focusIndicator.Opacity = 1.0;
         Canvas.SetLeft(focusIndicator, point.X - 40);
@@ -444,15 +446,12 @@ public class CameraViewControl : TemplatedControl
         }
         focusIndicator.RenderTransform = new ScaleTransform(1.0, 1.0);
 
-        // 阶段 2：呼吸脉冲 2 次 (400ms)
-        for (int pulse = 0; pulse < 2; pulse++)
+        // 阶段 2：等待对焦完成（与 AutoCancelDuration 匹配，共 ~2s）
+        for (int p = 0; p < 10; p++)
         {
-            for (int i = 0; i < 10; i++)
-            {
-                double scale = 1.0 + (0.15 * Math.Sin(i * Math.PI / 10.0));
-                focusIndicator.RenderTransform = new ScaleTransform(scale, scale);
-                await Task.Delay(20);
-            }
+            double scale = 1.0 + (0.08 * Math.Sin(p * Math.PI / 5.0));
+            focusIndicator.RenderTransform = new ScaleTransform(scale, scale);
+            await Task.Delay(200);
         }
         focusIndicator.RenderTransform = new ScaleTransform(1.0, 1.0);
 
@@ -464,6 +463,7 @@ public class CameraViewControl : TemplatedControl
         }
         focusIndicator.Opacity = 0.0;
         focusIndicator.IsVisible = false;
+        isFocusing = false;
     }
 
     // ========================================================================

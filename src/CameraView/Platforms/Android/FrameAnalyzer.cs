@@ -1,4 +1,6 @@
-using Android.Graphics;
+using System.Buffers;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using AndroidX.Camera.Core;
 
 namespace CameraView.Platforms.Android;
@@ -44,11 +46,15 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
             var uBuffer = uPlane.Buffer;
             var vBuffer = vPlane.Buffer;
 
-            var yData = new byte[yBuffer.Remaining()];
-            var uData = new byte[uBuffer.Remaining()];
-            var vData = new byte[vBuffer.Remaining()];
+            int yLen = yBuffer.Remaining();
+            int uLen = uBuffer.Remaining();
+            int vLen = vBuffer.Remaining();
 
-            yBuffer.Get(yData); uBuffer.Get(uData); vBuffer.Get(vData);
+            var yData = ArrayPool<byte>.Shared.Rent(yLen);
+            var uData = ArrayPool<byte>.Shared.Rent(uLen);
+            var vData = ArrayPool<byte>.Shared.Rent(vLen);
+
+            yBuffer.Get(yData, 0, yLen); uBuffer.Get(uData, 0, uLen); vBuffer.Get(vData, 0, vLen);
             yBuffer.Rewind(); uBuffer.Rewind(); vBuffer.Rewind();
 
             Task.Run(() =>
@@ -77,6 +83,12 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
                     }
                 }
                 catch { }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(yData);
+                    ArrayPool<byte>.Shared.Return(uData);
+                    ArrayPool<byte>.Shared.Return(vData);
+                }
             });
         }
         catch { }
@@ -92,42 +104,60 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
         int yRowStride, int uvRowStride, int uvPixelStride)
     {
         var skBitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Opaque);
-        var dstPtr = (byte*)skBitmap.GetPixels().ToPointer();
 
         fixed (byte* pY = yData, pU = uData, pV = vData)
         {
-            for (int row = 0; row < height; row++)
+            var srcY = pY;
+            var srcU = pU;
+            var srcV = pV;
+            var dst = (byte*)skBitmap.GetPixels().ToPointer();
+            int dstRowBytes = width * 4;
+
+            Parallel.For(0, height, row =>
             {
                 int yRowOff = row * yRowStride;
                 int uvRowOff = (row / 2) * uvRowStride;
-                int dstRowOff = row * width * 4;
+                int dstRowOff = row * dstRowBytes;
 
-                for (int col = 0; col < width; col++)
+                for (int col = 0; col < width - 1; col += 2)
                 {
-                    int y = pY[yRowOff + col] & 0xFF;
-                    int u = pU[uvRowOff + (col / 2) * uvPixelStride] & 0xFF;
-                    int v = pV[uvRowOff + (col / 2) * uvPixelStride] & 0xFF;
-
-                    int c = y - 16;
+                    int uvIdx = uvRowOff + (col / 2) * uvPixelStride;
+                    int u = srcU[uvIdx] & 0xFF;
+                    int v = srcV[uvIdx] & 0xFF;
                     int d = u - 128;
                     int e = v - 128;
 
-                    int r = Clamp((298 * c + 409 * e + 128) >> 8);
-                    int g = Clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
-                    int b = Clamp((298 * c + 516 * d + 128) >> 8);
+                    int y0 = srcY[yRowOff + col] & 0xFF;
+                    YuvToBgra(y0, d, e, dst + dstRowOff + col * 4);
 
-                    int di = dstRowOff + col * 4;
-                    dstPtr[di + 0] = (byte)b;
-                    dstPtr[di + 1] = (byte)g;
-                    dstPtr[di + 2] = (byte)r;
-                    dstPtr[di + 3] = 255;
+                    int y1 = srcY[yRowOff + col + 1] & 0xFF;
+                    YuvToBgra(y1, d, e, dst + dstRowOff + (col + 1) * 4);
                 }
-            }
+
+                if ((width & 1) != 0)
+                {
+                    int col = width - 1;
+                    int uvIdx = uvRowOff + (col / 2) * uvPixelStride;
+                    int y0 = srcY[yRowOff + col] & 0xFF;
+                    YuvToBgra(y0, srcU[uvIdx] - 128, srcV[uvIdx] - 128, dst + dstRowOff + col * 4);
+                }
+            });
         }
 
         return skBitmap;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe void YuvToBgra(int y, int d, int e, byte* dst)
+    {
+        int c = y - 16;
+        dst[0] = (byte)Clamp((298 * c + 516 * d + 128) >> 8);   // B
+        dst[1] = (byte)Clamp((298 * c - 100 * d - 208 * e + 128) >> 8); // G
+        dst[2] = (byte)Clamp((298 * c + 409 * e + 128) >> 8);   // R
+        dst[3] = 255;                                             // A
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int Clamp(int v) => v < 0 ? 0 : (v > 255 ? 255 : v);
 
     private static SKBitmap? RotateBitmap(SKBitmap bitmap, int degrees)

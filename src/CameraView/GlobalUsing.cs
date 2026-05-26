@@ -13,6 +13,7 @@ global using CameraView.Services;
 global using SkiaSharp;
 global using Avalonia.Threading;
 global using Avalonia.Media.Imaging;
+global using Avalonia.Platform;
 
 // Android 平台命名空间
 #if ANDROID

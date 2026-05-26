@@ -3,33 +3,25 @@ using System.Diagnostics;
 namespace CameraView.Services;
 
 /// <summary>
-/// 帧处理器 — 将相机原始帧缩放、编码为 Avalonia Bitmap，并统计 FPS
+/// 帧处理器 — 缩放 + 直拷像素到 WriteableBitmap，零编码开销
 /// </summary>
 public class FrameProcessor
 {
-    /// <summary>帧就绪事件（UI 线程回调）</summary>
     public event Action<Bitmap>? FrameReady;
-    /// <summary>FPS 更新事件</summary>
     public event Action<string>? FpsUpdated;
 
-    private Bitmap? currentBitmap;
     private readonly Stopwatch fpsStopwatch = Stopwatch.StartNew();
     private int frameCount;
     private string fpsText = "";
 
-    public Bitmap? ProcessedBitmap => currentBitmap;
     public string FpsText => fpsText;
 
-    /// <summary>
-    /// 处理预览帧：缩放 → JPEG 编码 → Avalonia Bitmap（后台线程执行重活，UI 线程只做赋值）
-    /// </summary>
     public void ProcessPreviewFrame(SKBitmap rawFrame)
     {
         try
         {
             int maxDim = Math.Max(rawFrame.Width, rawFrame.Height);
             float scale = Math.Min(1f, 960f / maxDim);
-
             int newW = Math.Max(1, (int)(rawFrame.Width * scale));
             int newH = Math.Max(1, (int)(rawFrame.Height * scale));
 
@@ -37,14 +29,31 @@ public class FrameProcessor
                 new SKImageInfo(newW, newH, SKColorType.Bgra8888),
                 new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
 
-            using var skImage = SKImage.FromBitmap(resized);
-            using var encoded = skImage.Encode(SKEncodedImageFormat.Jpeg, 85);
-            var jpegBytes = encoded.ToArray();
+            var wb = new WriteableBitmap(
+                new PixelSize(newW, newH),
+                new Vector(96, 96),
+                PixelFormat.Bgra8888,
+                AlphaFormat.Opaque);
 
-            using var stream = new MemoryStream(jpegBytes);
-            var bmp = new Bitmap(stream);
+            using var fb = wb.Lock();
+            var src = resized.GetPixels();
+            var srcRowBytes = resized.RowBytes;
+            var dstRowBytes = fb.RowBytes;
+            var copyBytes = Math.Min(srcRowBytes, dstRowBytes);
 
-            // FPS 统计
+            unsafe
+            {
+                var s = (byte*)src.ToPointer();
+                var d = (byte*)fb.Address.ToPointer();
+                for (int row = 0; row < newH; row++)
+                {
+                    Buffer.MemoryCopy(s, d, copyBytes, copyBytes);
+                    s += srcRowBytes;
+                    d += dstRowBytes;
+                }
+            }
+
+            // FPS
             frameCount++;
             if (fpsStopwatch.Elapsed.TotalSeconds >= 1.0)
             {
@@ -56,16 +65,9 @@ public class FrameProcessor
                 Dispatcher.UIThread.Post(() => FpsUpdated?.Invoke(f));
             }
 
-            // UI 线程：仅赋值和触发事件
             Dispatcher.UIThread.Post(() =>
             {
-                try
-                {
-                    var old = currentBitmap;
-                    currentBitmap = bmp;
-                    old?.Dispose();
-                    FrameReady?.Invoke(bmp);
-                }
+                try { FrameReady?.Invoke(wb); }
                 catch { }
             });
         }
