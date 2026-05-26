@@ -30,8 +30,8 @@
                             Height="80"
                             IsVisible="False"
                             Opacity="1.0"
-                            Stroke="#FF4081"
-                            StrokeThickness="2">
+                            Stroke="{TemplateBinding FocusIndicatorStroke}"
+                            StrokeThickness="{TemplateBinding FocusIndicatorStrokeThickness}">
                             <Ellipse.RenderTransform>
                                 <ScaleTransform ScaleX="1.0" ScaleY="1.0" />
                             </Ellipse.RenderTransform>

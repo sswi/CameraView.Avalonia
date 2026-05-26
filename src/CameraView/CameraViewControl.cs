@@ -91,6 +91,28 @@ public class CameraViewControl : TemplatedControl
         set => this.SetValue(TapToFocusEnabledProperty, value);
     }
 
+    public static readonly StyledProperty<Avalonia.Media.IBrush> FocusIndicatorStrokeProperty =
+        AvaloniaProperty.Register<CameraViewControl, Avalonia.Media.IBrush>(
+            nameof(FocusIndicatorStroke),
+            Avalonia.Media.Brushes.DeepPink);
+
+    public Avalonia.Media.IBrush FocusIndicatorStroke
+    {
+        get => this.GetValue(FocusIndicatorStrokeProperty);
+        set => this.SetValue(FocusIndicatorStrokeProperty, value);
+    }
+
+    public static readonly StyledProperty<double> FocusIndicatorStrokeThicknessProperty =
+        AvaloniaProperty.Register<CameraViewControl, double>(
+            nameof(FocusIndicatorStrokeThickness),
+            2.0);
+
+    public double FocusIndicatorStrokeThickness
+    {
+        get => this.GetValue(FocusIndicatorStrokeThicknessProperty);
+        set => this.SetValue(FocusIndicatorStrokeThicknessProperty, value);
+    }
+
     public static readonly StyledProperty<bool> PinchToZoomEnabledProperty =
         AvaloniaProperty.Register<CameraViewControl, bool>(nameof(PinchToZoomEnabled), true);
 

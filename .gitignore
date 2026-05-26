@@ -8,3 +8,4 @@ obj/
 packages/
 *.nupkg
 *.snupkg
+.claude/settings.local.json

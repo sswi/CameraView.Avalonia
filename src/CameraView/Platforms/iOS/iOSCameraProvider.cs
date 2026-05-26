@@ -31,7 +31,7 @@ internal class iOSCameraProvider : ICameraProvider
     public float? MaxZoomFactor { get; private set; }
     public float? CurrentZoomFactor { get; private set; }
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
-    public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[3];
+    public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0]; // 4032x3024
     public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
 
     public Task SetPhotoResolutionAsync(PhotoResolution resolution)
