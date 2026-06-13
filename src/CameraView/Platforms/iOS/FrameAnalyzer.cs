@@ -51,16 +51,17 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             pixelBuffer.Lock(CVPixelBufferLock.ReadOnly);
             try
             {
-                using var ciImage = new CoreImage.CIImage(pixelBuffer);
-                using var context = new CoreImage.CIContext();
-                using var cgImage = context.CreateCGImage(ciImage, ciImage.Extent);
-                if (cgImage != null)
+                var pixelFormat = pixelBuffer.PixelFormatType;
+
+                if (pixelFormat == CVPixelFormatType.CV32BGRA)
                 {
-                    using var skBitmap = CGImageToSKBitmap(cgImage);
-                    if (skBitmap != null)
-                    {
-                        this.onFrameReceived(skBitmap);
-                    }
+                    // 直接内存拷贝（BGRA → SKBitmap），跳过 CIImage/CGImage 中间层
+                    CopyBGRAFromPixelBuffer(pixelBuffer);
+                }
+                else
+                {
+                    // 回退：通过 CIImage 转换（兼容非 BGRA 输出格式）
+                    CopyViaCIImage(pixelBuffer);
                 }
             }
             finally
@@ -75,6 +76,40 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
         finally
         {
             try { sampleBuffer.Dispose(); } catch { }
+        }
+    }
+
+    private unsafe void CopyBGRAFromPixelBuffer(CVPixelBuffer pixelBuffer)
+    {
+        int width = (int)pixelBuffer.Width;
+        int height = (int)pixelBuffer.Height;
+        int bytesPerRow = (int)pixelBuffer.BytesPerRow;
+        var baseAddress = pixelBuffer.BaseAddress;
+
+        if (baseAddress == IntPtr.Zero) return;
+
+        var skBitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        Buffer.MemoryCopy(
+            baseAddress.ToPointer(),
+            skBitmap.GetPixels().ToPointer(),
+            height * bytesPerRow,
+            height * bytesPerRow);
+
+        this.onFrameReceived(skBitmap);
+    }
+
+    private void CopyViaCIImage(CVPixelBuffer pixelBuffer)
+    {
+        using var ciImage = new CoreImage.CIImage(pixelBuffer);
+        using var context = new CoreImage.CIContext();
+        using var cgImage = context.CreateCGImage(ciImage, ciImage.Extent);
+        if (cgImage != null)
+        {
+            using var skBitmap = CGImageToSKBitmap(cgImage);
+            if (skBitmap != null)
+            {
+                this.onFrameReceived(skBitmap);
+            }
         }
     }
 

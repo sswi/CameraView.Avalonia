@@ -10,7 +10,7 @@ using UIKit;
 
 namespace CameraView.Platforms.iOS;
 
-internal class iOSCameraProvider : ICameraProvider
+internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
 {
     private readonly AsyncLock updateCameraLock = new();
 
@@ -20,6 +20,7 @@ internal class iOSCameraProvider : ICameraProvider
     private AVCaptureVideoDataOutput? videoDataOutput;
     private AVCapturePhotoOutput? photoOutput;
     private FrameAnalyzer? frameAnalyzer;
+    private NSObject? zoomObserver;
 
     private bool started;
     private bool disposed;
@@ -37,16 +38,36 @@ internal class iOSCameraProvider : ICameraProvider
     public float MaxExposureCompensation { get; private set; }
     public float ExposureCompensation { get; private set; }
 
-    public Task SetPhotoResolutionAsync(PhotoResolution resolution)
+    public async Task SetPhotoResolutionAsync(PhotoResolution resolution)
     {
         this.PhotoResolution = resolution;
-        // iOS uses AVCapturePhotoSettings to match - applied at capture time
-        return Task.CompletedTask;
+
+        // 如果预览正在运行，重启以应用新分辨率
+        if (this.session?.Running == true)
+        {
+            await StopPreviewAsync();
+            await StartPreviewAsync();
+        }
     }
 
     public event EventHandler<byte[]>? PhotoCaptured;
     public event EventHandler<SKBitmap>? FrameReceived;
     public event EventHandler<string>? ErrorOccurred;
+
+    // ========== ICameraPermissions ==========
+
+    public Task<bool> CheckPermissionAsync()
+    {
+        var status = AVCaptureDevice.GetAuthorizationStatus(AVMediaTypes.Video);
+        return Task.FromResult(status == AVAuthorizationStatus.Authorized);
+    }
+
+    public async Task<bool> RequestPermissionAsync()
+    {
+        return await AVCaptureDevice.RequestAccessForMediaTypeAsync(AVMediaTypes.Video);
+    }
+
+    // ========== ICameraProvider ==========
 
     public Task InitializeAsync(CameraOptions? options = null)
     {
@@ -58,6 +79,10 @@ internal class iOSCameraProvider : ICameraProvider
         {
             AlwaysDiscardsLateVideoFrames = true
         };
+        // 请求 BGRA 输出，FrameAnalyzer 可直接内存拷贝，跳过 CIImage/CGImage 转换
+        this.videoDataOutput.WeakVideoSettings = new NSDictionary(
+            CVPixelBuffer.PixelFormatTypeKey,
+            NSNumber.FromUInt32((uint)CVPixelFormatType.CV32BGRA));
 
         this.photoOutput = new AVCapturePhotoOutput();
 
@@ -262,12 +287,20 @@ internal class iOSCameraProvider : ICameraProvider
     public Task SetFlashModeAsync(FlashMode mode)
     {
         this.FlashMode = mode;
+
+        // FlashMode.On 时同时开启手电筒（与 Android 行为一致）
+        if (this.captureDevice?.HasTorch == true)
+        {
+            _ = SetTorchAsync(mode == FlashMode.On);
+        }
+
         return Task.CompletedTask;
     }
 
     public void Dispose()
     {
         this.disposed = true;
+        this.zoomObserver?.Dispose();
         this.StopPreviewAsync();
         this.videoDataOutput?.Dispose();
         this.photoOutput?.Dispose();
@@ -325,7 +358,7 @@ internal class iOSCameraProvider : ICameraProvider
                 this.session.AddOutput(this.photoOutput);
             }
 
-            this.session.SessionPreset = AVCaptureSession.Preset1280x720;
+            this.session.SessionPreset = MapResolutionToPreset(this.PhotoResolution);
         }
         finally
         {
@@ -363,6 +396,34 @@ internal class iOSCameraProvider : ICameraProvider
         this.MinExposureCompensation = this.captureDevice.MinExposureTargetBias;
         this.MaxExposureCompensation = this.captureDevice.MaxExposureTargetBias;
         this.ExposureCompensation = this.captureDevice.ExposureTargetBias;
+
+        // KVO 监听缩放倍率变化（与 Android ZoomObserver 行为一致）
+        this.zoomObserver?.Dispose();
+        this.zoomObserver = this.captureDevice.AddObserver(
+            "videoZoomFactor",
+            NSKeyValueObservingOptions.New,
+            _ =>
+            {
+                if (this.captureDevice != null)
+                    this.CurrentZoomFactor = MathF.Round((float)this.captureDevice.VideoZoomFactor, 1);
+            });
+    }
+
+    /// <summary>将 PhotoResolution 映射到 AVCaptureSession.Preset</summary>
+    private static AVCaptureSession.Preset MapResolutionToPreset(PhotoResolution resolution)
+    {
+        return (resolution.Width, resolution.Height) switch
+        {
+            (3840, 2160) => AVCaptureSession.Preset3840x2160,
+            (1920, 1080) => AVCaptureSession.Preset1920x1080,
+            (1280, 720)  => AVCaptureSession.Preset1280x720,
+            (640, 480)   => AVCaptureSession.Preset640x480,
+            (352, 288)   => AVCaptureSession.Preset352x288,
+            (960, 540)   => AVCaptureSession.PresetiFrame960x540,
+            // 高于 Full HD 的用 High 品质，其余默认 720p
+            _ when resolution.Width * resolution.Height > 1920 * 1080 => AVCaptureSession.PresetHigh,
+            _ => AVCaptureSession.Preset1280x720,
+        };
     }
 
     private class PhotoCaptureDelegate : AVCapturePhotoCaptureDelegate

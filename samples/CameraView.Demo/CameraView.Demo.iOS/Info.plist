@@ -14,6 +14,8 @@
 	<true/>
 	<key>MinimumOSVersion</key>
 	<string>13.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>CameraView.Demo needs camera access to show live preview and take photos.</string>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>1</integer>
