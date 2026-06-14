@@ -77,20 +77,32 @@ internal class WindowsCameraProvider : ICameraProvider
         if (this.cameraDevices == null || index < 0 || index >= this.cameraDevices.Count)
             return;
 
-        this.mediaCapture?.Dispose();
-        this.mediaCapture = new MediaCapture();
-        await this.mediaCapture.InitializeAsync(new MediaCaptureInitializationSettings
+        try
         {
-            VideoDeviceId = this.cameraDevices[index].Id,
-            StreamingCaptureMode = StreamingCaptureMode.Video,
-        });
+            this.mediaCapture?.Dispose();
+            this.mediaCapture = null;
 
-        this.currentDeviceIndex = index;
-        CurrentFacing = this.cameraDevices[index].EnclosureLocation?.Panel
-            == global::Windows.Devices.Enumeration.Panel.Front
-            ? CameraFacing.Front : CameraFacing.Back;
+            var settings = new MediaCaptureInitializationSettings
+            {
+                VideoDeviceId = this.cameraDevices[index].Id,
+                StreamingCaptureMode = StreamingCaptureMode.Video,
+            };
 
-        ReadCapabilities();
+            this.mediaCapture = new MediaCapture();
+            await this.mediaCapture.InitializeAsync(settings);
+
+            this.currentDeviceIndex = index;
+            CurrentFacing = this.cameraDevices[index].EnclosureLocation?.Panel
+                == global::Windows.Devices.Enumeration.Panel.Front
+                ? CameraFacing.Front : CameraFacing.Back;
+
+            ReadCapabilities();
+        }
+        catch (Exception ex)
+        {
+            this.ErrorOccurred?.Invoke(this,
+                $"摄像头 #{index} ({this.cameraDevices[index].Name}) 初始化失败: {ex.Message}");
+        }
     }
 
     public async Task StartPreviewAsync()
@@ -119,6 +131,10 @@ internal class WindowsCameraProvider : ICameraProvider
             }
 
             this.started = true;
+            System.Diagnostics.Debug.WriteLine(
+                $"CameraView: preview started — {source.Info.DeviceInformation?.Name}, " +
+                $"streamType={source.Info.MediaStreamType}, " +
+                $"sourceKind={source.Info.SourceKind}");
         }
         catch (Exception ex)
         {
@@ -235,25 +251,35 @@ internal class WindowsCameraProvider : ICameraProvider
     {
         using (frame)
         {
-            // 获取 SoftwareBitmap，可能来自 Direct3DSurface fallback
             SoftwareBitmap? softwareBitmap = frame.VideoMediaFrame?.SoftwareBitmap;
 
-            // 很多摄像头输出 Direct3DSurface（硬件加速），SoftwareBitmap 为 null
             if (softwareBitmap == null && frame.VideoMediaFrame?.Direct3DSurface != null)
             {
                 try
                 {
                     softwareBitmap = await SoftwareBitmap.CreateCopyFromSurfaceAsync(
                         frame.VideoMediaFrame.Direct3DSurface);
+                    System.Diagnostics.Debug.WriteLine(
+                        $"CameraView: frame from DX surface, format={softwareBitmap.BitmapPixelFormat}");
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"DX surface convert error: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"CameraView: DX surface convert error: {ex.Message}");
                     return;
                 }
             }
 
-            if (softwareBitmap == null) return;
+            if (softwareBitmap == null)
+            {
+                System.Diagnostics.Debug.WriteLine("CameraView: frame has no SoftwareBitmap or Direct3DSurface");
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine(
+                $"CameraView: frame arrived — format={softwareBitmap.BitmapPixelFormat}, " +
+                $"{softwareBitmap.PixelWidth}x{softwareBitmap.PixelHeight}, " +
+                $"hasSW={frame.VideoMediaFrame?.SoftwareBitmap != null}, " +
+                $"hasDX={frame.VideoMediaFrame?.Direct3DSurface != null}");
 
             using (softwareBitmap)
             {

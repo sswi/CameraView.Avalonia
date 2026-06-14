@@ -14,7 +14,7 @@
 
     <Grid RowDefinitions="*,Auto">
 
-        <!--  ========== Camera Preview ==========  -->
+        <!-- Camera Preview -->
         <cv:CameraViewControl
             x:Name="CameraControl"
             Grid.Row="0"
@@ -28,7 +28,7 @@
             ExposureCompensation="{Binding ExposureValue}"
             PhotoCapturedCommand="{Binding OnPhotoCapturedCommand}" />
 
-        <!--  ========== Control Panel ==========  -->
+        <!-- Control Panel -->
         <ScrollViewer
             Grid.Row="1"
             MaxHeight="440"
@@ -36,7 +36,7 @@
             Padding="16,12">
             <StackPanel Spacing="10">
 
-                <!--  --- Status ---  -->
+                <!-- Status -->
                 <TextBlock
                     HorizontalAlignment="Center"
                     FontSize="13"
@@ -46,7 +46,7 @@
 
                 <Separator Background="#33FFFFFF" Height="1" />
 
-                <!--  --- Row 1: Main Buttons ---  -->
+                <!-- Row 1: Main Buttons -->
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
                     <Button
                         Padding="14,8"
@@ -60,7 +60,7 @@
                         Padding="14,8"
                         Background="#FF4081"
                         Command="{Binding TakePhotoCommand}"
-                        Content="📷 Photo"
+                        Content="&#x1F4F7; Photo"
                         CornerRadius="18"
                         Foreground="White"
                         FontSize="12" />
@@ -68,7 +68,7 @@
                         Padding="14,8"
                         Background="#40FFFFFF"
                         Command="{Binding SwitchCameraCommand}"
-                        Content="🔄 Switch"
+                        Content="&#x1F504; Switch"
                         CornerRadius="18"
                         Foreground="White"
                         FontSize="12" />
@@ -76,7 +76,7 @@
                         Padding="14,8"
                         Background="#40FFFFFF"
                         Command="{Binding ToggleTorchCommand}"
-                        Content="{Binding TorchOn, StringFormat='🔦 {0}'}"
+                        Content="{Binding TorchOn, StringFormat='&#x1F526; {0}'}"
                         CornerRadius="18"
                         Foreground="White"
                         FontSize="12" />
@@ -92,7 +92,7 @@
 
                 <Separator Background="#33FFFFFF" Height="1" />
 
-                <!--  --- Row 2: Flash Mode ---  -->
+                <!-- Flash Mode -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock
                         VerticalAlignment="Center"
@@ -109,7 +109,7 @@
                         SelectedItem="{Binding SelectedFlashMode}" />
                 </StackPanel>
 
-                <!--  --- Row 3: Resolution ---  -->
+                <!-- Resolution -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock
                         VerticalAlignment="Center"
@@ -132,7 +132,7 @@
                     </ComboBox>
                 </StackPanel>
 
-                <!--  --- Row 4: Zoom ---  -->
+                <!-- Zoom -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock
                         Width="36"
@@ -149,10 +149,10 @@
                         Width="36"
                         FontSize="12"
                         Foreground="White"
-                        Text="{Binding ZoomValue, StringFormat='{0:F1}x'}" />
+                        Text="{Binding ZoomValue, StringFormat='{}{0:F1}x'}" />
                 </StackPanel>
 
-                <!--  --- Row 5: Exposure ---  -->
+                <!-- Exposure -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock
                         Width="36"
@@ -170,10 +170,10 @@
                         Width="44"
                         FontSize="12"
                         Foreground="White"
-                        Text="{Binding ExposureValue, StringFormat='{0:F1}EV'}" />
+                        Text="{Binding ExposureValue, StringFormat='{}{0:F1}EV'}" />
                 </StackPanel>
 
-                <!--  --- Row 6: Orientation / Device Info ---  -->
+                <!-- Orientation / Device Info -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock
                         FontSize="12"
@@ -187,7 +187,7 @@
 
                 <Separator Background="#33FFFFFF" Height="1" />
 
-                <!--  --- Status indicators ---  -->
+                <!-- Status indicators -->
                 <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
                     <TextBlock
                         FontSize="11"

@@ -8,26 +8,34 @@ namespace CameraView.Platforms.Browser;
 
 /// <summary>
 /// 浏览器 (WASM) 相机提供者 — 基于 WebRTC getUserMedia + Canvas 2D
-/// 需配合 cameraView.js ES module 使用
-/// 不支持的功能静默忽略
+/// 按 deviceId 精确切换多摄像头
 /// </summary>
 internal partial class BrowserCameraProvider : ICameraProvider
 {
-    // ========================================================================
-    //  JS 互操作 — 导入 cameraView.js
-    // ========================================================================
+    private static bool moduleImported;
+    private static readonly object moduleLock = new();
 
-    [JSImport("startCamera", "cameraView.js")]
-    private static partial Task<bool> StartCameraJS(string facingMode, int width, int height);
+    private static async Task EnsureModuleAsync()
+    {
+        if (moduleImported) return;
+        lock (moduleLock) { if (moduleImported) return; moduleImported = true; }
+        await JSHost.ImportAsync("cameraModule", "../main.js");
+    }
 
-    [JSImport("stopCamera", "cameraView.js")]
+    [JSImport("startCamera", "cameraModule")]
+    private static partial Task<bool> StartCameraJS(string deviceId, int width, int height);
+
+    [JSImport("stopCamera", "cameraModule")]
     private static partial void StopCameraJS();
 
-    [JSImport("getFrameData", "cameraView.js")]
+    [JSImport("getFrameData", "cameraModule")]
     private static partial byte[]? GetFrameDataJS();
 
-    [JSImport("capturePhoto", "cameraView.js")]
+    [JSImport("capturePhoto", "cameraModule")]
     private static partial string CapturePhotoJS();
+
+    [JSImport("enumerateCameras", "cameraModule")]
+    private static partial Task<string> EnumerateCamerasJS();
 
     // ========================================================================
     //  成员变量
@@ -37,6 +45,8 @@ internal partial class BrowserCameraProvider : ICameraProvider
     private readonly int frameHeight = 480;
     private CancellationTokenSource? cts;
     private bool started;
+    private List<string> cameraIds = [];
+    private int currentCameraIndex;
 
     public bool IsInitialized => true;
     public CameraFacing CurrentFacing { get; private set; } = CameraFacing.Back;
@@ -58,34 +68,58 @@ internal partial class BrowserCameraProvider : ICameraProvider
     //  初始化
     // ========================================================================
 
-    public Task InitializeAsync(CameraOptions? options = null)
+    public async Task InitializeAsync(CameraOptions? options = null)
     {
+        await EnsureModuleAsync();
         if (options?.CameraFacing == CameraFacing.Front)
             CurrentFacing = CameraFacing.Front;
-        return Task.CompletedTask;
+
+        // 枚举可用摄像头
+        try
+        {
+            var json = await EnumerateCamerasJS();
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            this.cameraIds = doc.RootElement.EnumerateArray()
+                .Select(e => e.GetProperty("deviceId").GetString())
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToList()!;
+            this.currentCameraIndex = 0;
+        }
+        catch { }
     }
 
     // ========================================================================
-    //  预览（Canvas RGBA → SKBitmap Rgba8888，无需字节交换）
+    //  预览
     // ========================================================================
 
     public async Task StartPreviewAsync()
     {
         try
         {
-            var facing = CurrentFacing == CameraFacing.Front ? "user" : "environment";
+            var id = this.cameraIds.Count > 0
+                ? this.cameraIds[this.currentCameraIndex] : "";
+            bool ok = await StartCameraJS(id, this.frameWidth, this.frameHeight);
 
-            bool ok = await StartCameraJS(facing, this.frameWidth, this.frameHeight);
+            if (!ok && this.cameraIds.Count > 1)
+            {
+                for (int i = 0; i < this.cameraIds.Count; i++)
+                {
+                    if (i == this.currentCameraIndex) continue;
+                    ok = await StartCameraJS(this.cameraIds[i], this.frameWidth, this.frameHeight);
+                    if (ok) { this.currentCameraIndex = i; break; }
+                }
+            }
+
+            // 最后兜底：不指定 deviceId，让浏览器自动选
             if (!ok)
             {
-                // 回退：尝试反方向或无约束
                 ok = await StartCameraJS("", this.frameWidth, this.frameHeight);
-                if (!ok)
-                {
-                    this.ErrorOccurred?.Invoke(this, "浏览器拒绝访问摄像头。");
-                    return;
-                }
-                // 无法确定实际 facing，保持默认
+            }
+
+            if (!ok)
+            {
+                this.ErrorOccurred?.Invoke(this, "浏览器拒绝访问摄像头。");
+                return;
             }
 
             this.started = true;
@@ -100,7 +134,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
 
     private async Task FrameLoopAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(33)); // ~30fps
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(33));
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
@@ -108,7 +142,6 @@ internal partial class BrowserCameraProvider : ICameraProvider
                 var data = GetFrameDataJS();
                 if (data == null || data.Length == 0) continue;
 
-                // Canvas.getImageData 返回 RGBA → SKBitmap.Rgba8888 直接匹配
                 var bmp = new SKBitmap(this.frameWidth, this.frameHeight,
                     SKColorType.Rgba8888, SKAlphaType.Unpremul);
 
@@ -116,7 +149,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
                 {
                     fixed (byte* p = data)
                     {
-                        Buffer.MemoryCopy(p, bmp.GetPixels().ToPointer(),
+                        global::System.Buffer.MemoryCopy(p, bmp.GetPixels().ToPointer(),
                             data.Length, data.Length);
                     }
                 }
@@ -138,7 +171,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
     }
 
     // ========================================================================
-    //  拍照（Canvas.toBlob → JPEG 字节）
+    //  拍照
     // ========================================================================
 
     public Task TakePhotoAsync()
@@ -148,7 +181,6 @@ internal partial class BrowserCameraProvider : ICameraProvider
             var dataUrl = CapturePhotoJS();
             if (string.IsNullOrEmpty(dataUrl)) return Task.CompletedTask;
 
-            // data:image/jpeg;base64,/9j/4AAQ...
             var base64 = dataUrl.Substring(dataUrl.IndexOf(',') + 1);
             var jpeg = Convert.FromBase64String(base64);
             this.PhotoCaptured?.Invoke(this, jpeg);
@@ -157,57 +189,40 @@ internal partial class BrowserCameraProvider : ICameraProvider
         {
             this.ErrorOccurred?.Invoke(this, $"拍照失败: {ex.Message}");
         }
-
         return Task.CompletedTask;
     }
 
     // ========================================================================
-    //  切换摄像头
+    //  切换摄像头（按设备列表循环）
     // ========================================================================
 
     public async Task SwitchCameraAsync(CameraFacing facing)
     {
-        CurrentFacing = facing;
+        if (this.cameraIds.Count <= 1) return;
+
         var wasRunning = this.started;
         await StopPreviewAsync();
+
+        this.currentCameraIndex = (this.currentCameraIndex + 1) % this.cameraIds.Count;
+
         if (wasRunning)
             await StartPreviewAsync();
     }
 
     // ========================================================================
-    //  不支持的功能 — 静默忽略
+    //  不支持的功能
     // ========================================================================
 
     public Task SetFocusAsync(float normalizedX, float normalizedY) => Task.CompletedTask;
     public Task SetTorchAsync(bool on) => Task.CompletedTask;
     public Task SetZoomAsync(float zoomFactor) => Task.CompletedTask;
-
-    public Task SetFlashModeAsync(FlashMode mode)
-    {
-        this.FlashMode = mode;
-        return Task.CompletedTask;
-    }
-
-    public Task SetPhotoResolutionAsync(PhotoResolution resolution)
-    {
-        this.PhotoResolution = resolution;
-        return Task.CompletedTask;
-    }
-
-    public Task SetExposureCompensationAsync(float ev)
-    {
-        this.ExposureCompensation = ev;
-        return Task.CompletedTask;
-    }
-
-    // ========================================================================
-    //  清理
-    // ========================================================================
+    public Task SetFlashModeAsync(FlashMode mode) { FlashMode = mode; return Task.CompletedTask; }
+    public Task SetPhotoResolutionAsync(PhotoResolution resolution) { PhotoResolution = resolution; return Task.CompletedTask; }
+    public Task SetExposureCompensationAsync(float ev) { ExposureCompensation = ev; return Task.CompletedTask; }
 
     public void Dispose()
     {
         StopPreviewAsync();
-        StopCameraJS();
     }
 }
 #endif
