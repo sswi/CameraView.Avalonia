@@ -20,6 +20,8 @@ internal class WindowsCameraProvider : ICameraProvider
     private MediaCapture? mediaCapture;
     private MediaFrameReader? frameReader;
     private bool started;
+    private List<DeviceInformation>? cameraDevices;
+    private int currentDeviceIndex;
 
     public bool IsInitialized => this.mediaCapture != null;
     public CameraFacing CurrentFacing { get; private set; } = CameraFacing.Back;
@@ -48,36 +50,47 @@ internal class WindowsCameraProvider : ICameraProvider
 
         try
         {
-            var panel = CurrentFacing == CameraFacing.Back
-                ? global::Windows.Devices.Enumeration.Panel.Back
-                : global::Windows.Devices.Enumeration.Panel.Front;
-            var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-            var selected = devices.FirstOrDefault(d => d.EnclosureLocation?.Panel == panel)
-                ?? devices.FirstOrDefault();
-
-            if (selected == null)
+            this.cameraDevices = (await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)).ToList();
+            if (this.cameraDevices.Count == 0)
             {
                 this.ErrorOccurred?.Invoke(this, "未找到摄像头设备。");
                 return;
             }
 
-            this.mediaCapture?.Dispose();
-            this.mediaCapture = new MediaCapture();
-            await this.mediaCapture.InitializeAsync(new MediaCaptureInitializationSettings
-            {
-                VideoDeviceId = selected.Id,
-                StreamingCaptureMode = StreamingCaptureMode.Video,
-            });
+            // 按 facing 或索引选择初始设备
+            var initialIndex = this.cameraDevices.FindIndex(d =>
+                d.EnclosureLocation?.Panel == (CurrentFacing == CameraFacing.Back
+                    ? global::Windows.Devices.Enumeration.Panel.Back
+                    : global::Windows.Devices.Enumeration.Panel.Front));
+            this.currentDeviceIndex = initialIndex >= 0 ? initialIndex : 0;
 
-            CurrentFacing = selected.EnclosureLocation?.Panel == global::Windows.Devices.Enumeration.Panel.Front
-                ? CameraFacing.Front : CameraFacing.Back;
-
-            ReadCapabilities();
+            await InitDeviceAsync(this.currentDeviceIndex);
         }
         catch (Exception ex)
         {
             this.ErrorOccurred?.Invoke(this, $"初始化失败: {ex.Message}");
         }
+    }
+
+    private async Task InitDeviceAsync(int index)
+    {
+        if (this.cameraDevices == null || index < 0 || index >= this.cameraDevices.Count)
+            return;
+
+        this.mediaCapture?.Dispose();
+        this.mediaCapture = new MediaCapture();
+        await this.mediaCapture.InitializeAsync(new MediaCaptureInitializationSettings
+        {
+            VideoDeviceId = this.cameraDevices[index].Id,
+            StreamingCaptureMode = StreamingCaptureMode.Video,
+        });
+
+        this.currentDeviceIndex = index;
+        CurrentFacing = this.cameraDevices[index].EnclosureLocation?.Panel
+            == global::Windows.Devices.Enumeration.Panel.Front
+            ? CameraFacing.Front : CameraFacing.Back;
+
+        ReadCapabilities();
     }
 
     public async Task StartPreviewAsync()
@@ -159,13 +172,16 @@ internal class WindowsCameraProvider : ICameraProvider
 
     public async Task SwitchCameraAsync(CameraFacing facing)
     {
-        CurrentFacing = facing;
+        // 桌面端多摄像头：循环切换（忽略 facing）
+        if (this.cameraDevices == null || this.cameraDevices.Count <= 1)
+            return;
+
         var wasRunning = this.started;
         await StopPreviewAsync();
-        this.mediaCapture?.Dispose();
-        this.mediaCapture = null;
 
-        await InitializeAsync();
+        var nextIndex = (this.currentDeviceIndex + 1) % this.cameraDevices.Count;
+        await InitDeviceAsync(nextIndex);
+
         if (wasRunning && this.mediaCapture != null)
             await StartPreviewAsync();
     }

@@ -128,6 +128,8 @@ internal unsafe class LinuxCameraProvider : ICameraProvider
     private uint frameFormat; // V4L2_PIX_FMT_MJPEG or V4L2_PIX_FMT_YUYV
     private bool started;
     private Thread? captureThread;
+    private List<string>? devicePaths;
+    private int currentDeviceIndex;
 
     public bool IsInitialized => this.fd >= 0;
     public CameraFacing CurrentFacing { get; private set; } = CameraFacing.Back;
@@ -154,10 +156,10 @@ internal unsafe class LinuxCameraProvider : ICameraProvider
         if (options?.CameraFacing == CameraFacing.Front)
             CurrentFacing = CameraFacing.Front;
 
-        // Linux 上没有标准的前/后摄区分，遍历 /dev/video* 找第一个摄像头
+        // Linux 上没有标准的前/后摄区分，遍历 /dev/video* 收集所有摄像头
         try
         {
-            string? devicePath = null;
+            this.devicePaths = new List<string>();
             for (int i = 0; i < 64; i++)
             {
                 var path = $"/dev/video{i}";
@@ -177,30 +179,19 @@ internal unsafe class LinuxCameraProvider : ICameraProvider
                     isCapture = (caps_mask & V4L2_CAP_VIDEO_CAPTURE) != 0;
                 }
 
-                if (isCapture)
-                {
-                    devicePath = path;
-                    close(probe); // will re-open with blocking mode
-                    break;
-                }
                 close(probe);
+                if (isCapture)
+                    this.devicePaths.Add(path);
             }
 
-            if (devicePath == null)
+            if (this.devicePaths.Count == 0)
             {
                 this.ErrorOccurred?.Invoke(this, "未找到 V4L2 摄像头设备。");
                 return Task.CompletedTask;
             }
 
-            this.fd = open(devicePath, O_RDWR); // blocking mode
-
-            // 尝试协商 MJPEG 格式，回退 YUYV
-            if (!TrySetFormat(V4L2_PIX_FMT_MJPEG) && !TrySetFormat(V4L2_PIX_FMT_YUYV))
-            {
-                close(this.fd);
-                this.fd = -1;
-                this.ErrorOccurred?.Invoke(this, "摄像头不支持 MJPEG 或 YUYV 格式。");
-            }
+            this.currentDeviceIndex = 0;
+            OpenDevice(this.currentDeviceIndex);
         }
         catch (Exception ex)
         {
@@ -240,6 +231,26 @@ internal unsafe class LinuxCameraProvider : ICameraProvider
         this.frameFormat = fmt.pix.pixelformat;
 
         return fmt.pix.pixelformat == fourcc;
+    }
+
+    /// <summary>按索引打开 V4L2 设备并协商格式</summary>
+    private void OpenDevice(int index)
+    {
+        if (this.devicePaths == null || index < 0 || index >= this.devicePaths.Count)
+            return;
+
+        if (this.fd >= 0)
+            close(this.fd);
+
+        this.currentDeviceIndex = index;
+        this.fd = open(this.devicePaths[index], O_RDWR);
+
+        if (!TrySetFormat(V4L2_PIX_FMT_MJPEG) && !TrySetFormat(V4L2_PIX_FMT_YUYV))
+        {
+            close(this.fd);
+            this.fd = -1;
+            this.ErrorOccurred?.Invoke(this, "摄像头不支持 MJPEG 或 YUYV 格式。");
+        }
     }
 
     // ========================================================================
@@ -381,12 +392,17 @@ internal unsafe class LinuxCameraProvider : ICameraProvider
 
     public async Task SwitchCameraAsync(CameraFacing facing)
     {
-        CurrentFacing = facing;
+        // 桌面端多摄像头：循环切换（忽略 facing）
+        if (this.devicePaths == null || this.devicePaths.Count <= 1)
+            return;
+
         var wasRunning = this.started;
         await StopPreviewAsync();
         this.frameFormat = 0;
 
-        await InitializeAsync();
+        var nextIndex = (this.currentDeviceIndex + 1) % this.devicePaths.Count;
+        OpenDevice(nextIndex);
+
         if (wasRunning && this.fd >= 0)
             await StartPreviewAsync();
     }

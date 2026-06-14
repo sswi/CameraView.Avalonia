@@ -29,6 +29,8 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
     private bool started;
     private bool disposed;
     private CameraFacing currentFacing = CameraFacing.Back;
+    private List<string>? deviceUniqueIds;
+    private int currentDeviceIndex;
 
     public bool IsInitialized => this.session != null;
     public CameraFacing CurrentFacing => this.currentFacing;
@@ -69,6 +71,16 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
     {
         if (options?.CameraFacing == CameraFacing.Front)
             this.currentFacing = CameraFacing.Front;
+
+        // 发现所有可用摄像头
+        this.deviceUniqueIds = AVCaptureDeviceDiscoverySession.Create(
+            [AVCaptureDeviceType.BuiltInWideAngleCamera],
+            AVMediaTypes.Video,
+            AVCaptureDevicePosition.Unspecified).Devices
+            .Select(d => d.UniqueID)
+            .ToList();
+
+        this.currentDeviceIndex = 0;
 
         this.session = new AVCaptureSession();
         this.videoDataOutput = new AVCaptureVideoDataOutput
@@ -160,10 +172,26 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
 
     public async Task SwitchCameraAsync(CameraFacing facing)
     {
-        this.currentFacing = facing;
+        // 桌面端多摄像头：循环切换（忽略 facing）
+        if (this.deviceUniqueIds == null || this.deviceUniqueIds.Count <= 1)
+            return;
+
+        var wasRunning = this.started;
+        await StopPreviewAsync();
+
+        this.currentDeviceIndex = (this.currentDeviceIndex + 1) % this.deviceUniqueIds.Count;
+
         using (await this.updateCameraLock.LockAsync())
         {
             await UpdateCameraAsync();
+            UpdateOutput();
+            UpdateDeviceCapabilities();
+
+            if (wasRunning)
+            {
+                this.session?.StartRunning();
+                this.started = true;
+            }
         }
     }
 
@@ -216,25 +244,23 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
                 this.captureInput.Dispose();
             }
 
-            // macOS 上通过 BuiltInWideAngleCamera 发现摄像头
-            var position = this.currentFacing == CameraFacing.Back
-                ? AVCaptureDevicePosition.Back
-                : AVCaptureDevicePosition.Front;
+            // 从设备列表按当前索引选择
+            var uid = this.deviceUniqueIds != null && this.currentDeviceIndex < this.deviceUniqueIds.Count
+                ? this.deviceUniqueIds[this.currentDeviceIndex]
+                : null;
 
-            this.captureDevice = AVCaptureDeviceDiscoverySession.Create(
+            var allDevices = AVCaptureDeviceDiscoverySession.Create(
                 [AVCaptureDeviceType.BuiltInWideAngleCamera],
                 AVMediaTypes.Video,
-                position).Devices.FirstOrDefault()
-                // 如果指定位置无设备，兜底取第一个可用摄像头
-                ?? AVCaptureDeviceDiscoverySession.Create(
-                    [AVCaptureDeviceType.BuiltInWideAngleCamera],
-                    AVMediaTypes.Video,
-                    AVCaptureDevicePosition.Unspecified).Devices.FirstOrDefault();
+                AVCaptureDevicePosition.Unspecified).Devices;
+
+            this.captureDevice = allDevices.FirstOrDefault(d => d.UniqueID == uid)
+                ?? allDevices.FirstOrDefault();
 
             if (this.captureDevice == null)
                 throw new Exception("未找到摄像头设备。");
 
-            // 更新当前 facing（macOS 外接摄像头可能无法获取 panel）
+            // 更新当前 facing（外接摄像头可能无法获取 panel）
             if (this.captureDevice.Position == AVCaptureDevicePosition.Front)
                 this.currentFacing = CameraFacing.Front;
             else if (this.captureDevice.Position == AVCaptureDevicePosition.Back)
