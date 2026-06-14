@@ -99,8 +99,18 @@ internal class WindowsCameraProvider : ICameraProvider
 
         try
         {
-            var source = this.mediaCapture.FrameSources.FirstOrDefault(
-                s => s.Value.Info.MediaStreamType is MediaStreamType.VideoPreview or MediaStreamType.VideoRecord).Value;
+            // 必须先启动预览管道，否则帧源无法输出数据
+            await this.mediaCapture.StartPreviewAsync();
+
+            // 用 SourceKind.Color 更可靠（兼容多种摄像头）
+            var source = this.mediaCapture.FrameSources.Values.FirstOrDefault(
+                s => s.Info.SourceKind == MediaFrameSourceKind.Color);
+
+            if (source == null)
+            {
+                // 兜底：取第一个可用帧源
+                source = this.mediaCapture.FrameSources.Values.FirstOrDefault();
+            }
 
             if (source == null)
             {
@@ -108,8 +118,9 @@ internal class WindowsCameraProvider : ICameraProvider
                 return;
             }
 
+            // 指定 BGRA8 输出格式，避免格式不匹配
             this.frameReader?.Dispose();
-            this.frameReader = await this.mediaCapture.CreateFrameReaderAsync(source);
+            this.frameReader = await this.mediaCapture.CreateFrameReaderAsync(source, "BGRA8");
             this.frameReader.FrameArrived += OnFrameArrived;
 
             var status = await this.frameReader.StartAsync();
@@ -228,25 +239,20 @@ internal class WindowsCameraProvider : ICameraProvider
         if (frame?.VideoMediaFrame?.SoftwareBitmap is not SoftwareBitmap softwareBitmap)
             return;
 
-        SoftwareBitmap? converted = null;
         try
         {
-            // 统一转为 BGRA8888
-            if (softwareBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8)
-                converted = SoftwareBitmap.Convert(softwareBitmap,
-                    BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
-
-            var target = converted ?? softwareBitmap;
-            var pixelCount = (uint)(target.PixelWidth * target.PixelHeight * 4);
+            // 帧读取器已配置为 BGRA8 输出，直接拷贝
+            var width = softwareBitmap.PixelWidth;
+            var height = softwareBitmap.PixelHeight;
+            var pixelCount = (uint)(width * height * 4);
             var buffer = new global::Windows.Storage.Streams.Buffer(pixelCount);
-            target.CopyToBuffer(buffer);
+            softwareBitmap.CopyToBuffer(buffer);
 
             using var dataReader = DataReader.FromBuffer(buffer);
             var bytes = new byte[buffer.Length];
             dataReader.ReadBytes(bytes);
 
-            var skBitmap = new SKBitmap(
-                target.PixelWidth, target.PixelHeight,
+            var skBitmap = new SKBitmap(width, height,
                 SKColorType.Bgra8888, SKAlphaType.Premul);
 
             unsafe
@@ -261,13 +267,10 @@ internal class WindowsCameraProvider : ICameraProvider
 
             this.FrameReceived?.Invoke(this, skBitmap);
         }
-        catch
+        catch (Exception ex)
         {
-            // 跳过异常帧
-        }
-        finally
-        {
-            converted?.Dispose();
+            // 跳过异常帧，同时报告错误以便调试
+            System.Diagnostics.Debug.WriteLine($"Frame error: {ex.Message}");
         }
     }
 
