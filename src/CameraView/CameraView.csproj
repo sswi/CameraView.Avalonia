@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0;net10.0-android;net10.0-ios</TargetFrameworks>
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0;net10.0-macos;net10.0-android;net10.0-ios</TargetFrameworks>
     <OutputType>Library</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -12,6 +12,7 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'macos'">10.15</SupportedOSPlatformVersion>
 
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
@@ -39,6 +40,7 @@
     <Compile Remove="Platforms\iOS\**" Condition="!$(TargetFramework.Contains('-ios'))" />
     <Compile Remove="Platforms\Windows\**" Condition="!$(TargetFramework.Contains('-windows'))" />
     <Compile Remove="Platforms\Linux\**" Condition="!$([MSBuild]::IsOSPlatform('Linux'))" />
+    <Compile Remove="Platforms\macOS\**" Condition="!$(TargetFramework.Contains('-macos'))" />
   </ItemGroup>
 
 </Project>
