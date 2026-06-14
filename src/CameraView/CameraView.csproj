@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>CameraView</RootNamespace>
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(DefineConstants);LINUX</DefineConstants>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
@@ -37,6 +38,7 @@
     <Compile Remove="Platforms\Android\**" Condition="!$(TargetFramework.Contains('-android'))" />
     <Compile Remove="Platforms\iOS\**" Condition="!$(TargetFramework.Contains('-ios'))" />
     <Compile Remove="Platforms\Windows\**" Condition="!$(TargetFramework.Contains('-windows'))" />
+    <Compile Remove="Platforms\Linux\**" Condition="!$([MSBuild]::IsOSPlatform('Linux'))" />
   </ItemGroup>
 
 </Project>

@@ -35,10 +35,15 @@ public static class CameraProviderFactory
     {
         return new Platforms.Windows.WindowsCameraProvider();
     }
+#elif LINUX
+    public static ICameraProvider Create()
+    {
+        return new Platforms.Linux.LinuxCameraProvider();
+    }
 #else
     public static ICameraProvider Create()
     {
-        throw new PlatformNotSupportedException("CameraView 仅支持 Windows、Android 和 iOS 平台。");
+        throw new PlatformNotSupportedException("CameraView 仅支持 Windows、Linux、Android 和 iOS 平台。");
     }
 #endif
 
