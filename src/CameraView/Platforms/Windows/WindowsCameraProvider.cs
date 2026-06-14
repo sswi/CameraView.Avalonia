@@ -216,13 +216,13 @@ internal class WindowsCameraProvider : ICameraProvider
         try
         {
             // 统一转为 BGRA8888
-            if (softwareBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8888)
+            if (softwareBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8)
                 converted = SoftwareBitmap.Convert(softwareBitmap,
-                    BitmapPixelFormat.Bgra8888, BitmapAlphaMode.Premultiplied);
+                    BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
 
             var target = converted ?? softwareBitmap;
             var pixelCount = (uint)(target.PixelWidth * target.PixelHeight * 4);
-            var buffer = new Windows.Storage.Streams.Buffer(pixelCount);
+            var buffer = new global::Windows.Storage.Streams.Buffer(pixelCount);
             target.CopyToBuffer(buffer);
 
             using var dataReader = DataReader.FromBuffer(buffer);
