@@ -11,7 +11,7 @@ namespace CameraView.Platforms.Browser;
 /// 需配合 cameraView.js ES module 使用
 /// 不支持的功能静默忽略
 /// </summary>
-internal class BrowserCameraProvider : ICameraProvider
+internal partial class BrowserCameraProvider : ICameraProvider
 {
     // ========================================================================
     //  JS 互操作 — 导入 cameraView.js
