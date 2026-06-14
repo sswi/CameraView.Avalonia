@@ -6,85 +6,201 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:CameraView.Demo.ViewModels"
-    d:DesignHeight="640"
-    d:DesignWidth="360"
+    xmlns:md="using:CameraView.Models"
+    d:DesignHeight="800"
+    d:DesignWidth="480"
     x:DataType="vm:MainViewModel"
     mc:Ignorable="d">
 
     <Grid RowDefinitions="*,Auto">
 
-        <!--  Camera View  -->
+        <!--  ========== Camera Preview ==========  -->
         <cv:CameraViewControl
             x:Name="CameraControl"
             Grid.Row="0"
             CameraEnabled="{Binding IsCameraRunning}"
+            CameraFacing="{Binding CurrentFacing}"
             DebugMode="{Binding DebugMode}"
+            TorchOn="{Binding TorchOn}"
+            FlashMode="{Binding SelectedFlashMode}"
+            PhotoResolution="{Binding SelectedResolution}"
+            RequestZoomFactor="{Binding ZoomValue}"
+            ExposureCompensation="{Binding ExposureValue}"
             PhotoCapturedCommand="{Binding OnPhotoCapturedCommand}" />
 
-
-
-
-        <!--  Controls overlay  -->
-        <StackPanel
+        <!--  ========== Control Panel ==========  -->
+        <ScrollViewer
             Grid.Row="1"
-            Margin="16"
+            MaxHeight="440"
             Background="#E0000000"
-            Spacing="12">
+            Padding="16,12">
+            <StackPanel Spacing="10">
 
-            <!--  Status  -->
-            <TextBlock
-                HorizontalAlignment="Center"
-                FontSize="14"
-                Foreground="White"
-                Text="{Binding StatusText}"
-                TextWrapping="Wrap" />
+                <!--  --- Status ---  -->
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    FontSize="13"
+                    Foreground="#CCFFFFFF"
+                    Text="{Binding StatusText}"
+                    TextWrapping="Wrap" />
 
-            <!--  Button row  -->
-            <StackPanel
-                HorizontalAlignment="Center"
-                Orientation="Horizontal"
-                Spacing="16">
-                <Button
-                    Padding="16,8"
-                    Background="#FF4081"
-                    Command="{Binding StartCameraCommand}"
-                    Content="Start Camera"
-                    CornerRadius="20"
-                    Foreground="White"
-                    IsVisible="{Binding $self.IsVisible}" />
+                <Separator Background="#33FFFFFF" Height="1" />
 
-                <Button
-                    Padding="16,8"
-                    Background="#FF4081"
-                    Command="{Binding TakePhotoCommand}"
-                    Content="Take Photo"
-                    CornerRadius="24"
-                    Foreground="White" />
+                <!--  --- Row 1: Main Buttons ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                    <Button
+                        Padding="14,8"
+                        Background="#FF4081"
+                        Command="{Binding StartCameraCommand}"
+                        Content="Start"
+                        CornerRadius="18"
+                        Foreground="White"
+                        FontSize="12" />
+                    <Button
+                        Padding="14,8"
+                        Background="#FF4081"
+                        Command="{Binding TakePhotoCommand}"
+                        Content="📷 Photo"
+                        CornerRadius="18"
+                        Foreground="White"
+                        FontSize="12" />
+                    <Button
+                        Padding="14,8"
+                        Background="#40FFFFFF"
+                        Command="{Binding SwitchCameraCommand}"
+                        Content="🔄 Switch"
+                        CornerRadius="18"
+                        Foreground="White"
+                        FontSize="12" />
+                    <Button
+                        Padding="14,8"
+                        Background="#40FFFFFF"
+                        Command="{Binding ToggleTorchCommand}"
+                        Content="{Binding TorchOn, StringFormat='🔦 {0}'}"
+                        CornerRadius="18"
+                        Foreground="White"
+                        FontSize="12" />
+                    <Button
+                        Padding="14,8"
+                        Background="#40FFFFFF"
+                        Command="{Binding ToggleDebugCommand}"
+                        Content="FPS"
+                        CornerRadius="18"
+                        Foreground="White"
+                        FontSize="12" />
+                </StackPanel>
 
-                <Button
-                    Padding="16,8"
-                    Background="#40000000"
-                    Command="{Binding SwitchCameraCommand}"
-                    Content="Switch"
-                    CornerRadius="20"
-                    Foreground="White" />
+                <Separator Background="#33FFFFFF" Height="1" />
 
-                <Button
-                    Padding="16,8"
-                    Background="#40000000"
-                    Command="{Binding ToggleTorchCommand}"
-                    Content="Torch"
-                    CornerRadius="20"
-                    Foreground="White" />
-                <Button
-                    Padding="16,8"
-                    Background="#40000000"
-                    Command="{Binding ToggleDebugCommand}"
-                    Content="FPS"
-                    CornerRadius="20"
-                    Foreground="White" />
+                <!--  --- Row 2: Flash Mode ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="#AAFFFFFF"
+                        Text="Flash:" />
+                    <ComboBox
+                        Width="100"
+                        Background="#30FFFFFF"
+                        BorderThickness="0"
+                        FontSize="11"
+                        Foreground="White"
+                        ItemsSource="{Binding FlashModes}"
+                        SelectedItem="{Binding SelectedFlashMode}" />
+                </StackPanel>
+
+                <!--  --- Row 3: Resolution ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="#AAFFFFFF"
+                        Text="Res:" />
+                    <ComboBox
+                        Width="220"
+                        Background="#30FFFFFF"
+                        BorderThickness="0"
+                        FontSize="11"
+                        Foreground="White"
+                        ItemsSource="{Binding Resolutions}"
+                        SelectedItem="{Binding SelectedResolution}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate DataType="md:PhotoResolution">
+                                <TextBlock Text="{Binding}" Foreground="White" FontSize="11" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <!--  --- Row 4: Zoom ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        Width="36"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="#AAFFFFFF"
+                        Text="Zoom:" />
+                    <Slider
+                        Width="140"
+                        Maximum="{Binding MaxZoom}"
+                        Minimum="{Binding MinZoom}"
+                        Value="{Binding ZoomValue}" />
+                    <TextBlock
+                        Width="36"
+                        FontSize="12"
+                        Foreground="White"
+                        Text="{Binding ZoomValue, StringFormat='{0:F1}x'}" />
+                </StackPanel>
+
+                <!--  --- Row 5: Exposure ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        Width="36"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="#AAFFFFFF"
+                        Text="EV:" />
+                    <Slider
+                        Width="140"
+                        Maximum="2"
+                        Minimum="-2"
+                        TickFrequency="0.5"
+                        Value="{Binding ExposureValue}" />
+                    <TextBlock
+                        Width="44"
+                        FontSize="12"
+                        Foreground="White"
+                        Text="{Binding ExposureValue, StringFormat='{0:F1}EV'}" />
+                </StackPanel>
+
+                <!--  --- Row 6: Orientation / Device Info ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        FontSize="12"
+                        Foreground="#AAFFFFFF"
+                        Text="Orientation:" />
+                    <TextBlock
+                        FontSize="12"
+                        Foreground="White"
+                        Text="{Binding OrientationInfo}" />
+                </StackPanel>
+
+                <Separator Background="#33FFFFFF" Height="1" />
+
+                <!--  --- Status indicators ---  -->
+                <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
+                    <TextBlock
+                        FontSize="11"
+                        Foreground="#AAFFFFFF"
+                        Text="{Binding CurrentFacing, StringFormat='Camera: {0}'}" />
+                    <TextBlock
+                        FontSize="11"
+                        Foreground="#AAFFFFFF"
+                        Text="{Binding IsCameraRunning, StringFormat='Preview: {0}'}" />
+                </StackPanel>
+
             </StackPanel>
-        </StackPanel>
+        </ScrollViewer>
 
     </Grid>
 </UserControl>

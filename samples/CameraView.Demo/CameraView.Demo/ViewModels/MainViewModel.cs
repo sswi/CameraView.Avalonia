@@ -1,4 +1,6 @@
 using System;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -16,7 +18,7 @@ public partial class MainViewModel : ViewModelBase
     private bool _isCameraRunning;
 
     [ObservableProperty]
-    private string _statusText = "Tap Start Camera to begin";
+    private string _statusText = "按 Start Camera 开始";
 
     [ObservableProperty]
     private CameraFacing _currentFacing = CameraFacing.Back;
@@ -27,6 +29,33 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool _debugMode = true;
 
+    [ObservableProperty]
+    private FlashMode _selectedFlashMode = FlashMode.Auto;
+
+    [ObservableProperty]
+    private PhotoResolution? _selectedResolution;
+
+    [ObservableProperty]
+    private float _zoomValue = 1f;
+
+    [ObservableProperty]
+    private float _minZoom = 1f;
+
+    [ObservableProperty]
+    private float _maxZoom = 5f;
+
+    [ObservableProperty]
+    private float _exposureValue;
+
+    [ObservableProperty]
+    private string _orientationInfo = "-";
+
+    // Flash mode 枚举值列表（供 UI 绑定）
+    public FlashMode[] FlashModes { get; } = [FlashMode.Auto, FlashMode.On, FlashMode.Off];
+
+    // 分辨率列表
+    public ObservableCollection<PhotoResolution> Resolutions { get; } = [];
+
     public IRelayCommand<PhotoCaptureResult?> OnPhotoCapturedCommand { get; }
 
     public CameraViewControl? CameraControl { get; set; }
@@ -35,7 +64,6 @@ public partial class MainViewModel : ViewModelBase
     {
         this.OnPhotoCapturedCommand = new RelayCommand<PhotoCaptureResult?>(OnPhotoCaptured);
 
-        // Create the platform camera provider (pass null for default context)
         this.cameraProvider = CameraProviderFactory.Create();
         this.cameraPermissions = CameraProviderFactory.CreatePermissions(this.cameraProvider);
 
@@ -45,6 +73,44 @@ public partial class MainViewModel : ViewModelBase
         };
     }
 
+    // ========================================================================
+    //  属性变更 → 同步到 Provider
+    // ========================================================================
+
+    partial void OnSelectedFlashModeChanged(FlashMode value)
+    {
+        if (this.CameraControl != null)
+            this.CameraControl.FlashMode = value;
+    }
+
+    partial void OnSelectedResolutionChanged(PhotoResolution? value)
+    {
+        if (this.CameraControl != null && value != null)
+            this.CameraControl.PhotoResolution = value;
+    }
+
+    partial void OnZoomValueChanged(float value)
+    {
+        if (this.CameraControl != null)
+            this.CameraControl.RequestZoomFactor = value;
+    }
+
+    partial void OnExposureValueChanged(float value)
+    {
+        if (this.CameraControl != null)
+            this.CameraControl.ExposureCompensation = value;
+    }
+
+    partial void OnTorchOnChanged(bool value)
+    {
+        if (this.CameraControl != null)
+            this.CameraControl.TorchOn = value;
+    }
+
+    // ========================================================================
+    //  指令
+    // ========================================================================
+
     [RelayCommand]
     private async Task StartCameraAsync()
     {
@@ -52,33 +118,45 @@ public partial class MainViewModel : ViewModelBase
 
         try
         {
-            // Step 1: Check camera permission
             bool hasPermission = await this.cameraPermissions.CheckPermissionAsync();
             if (!hasPermission)
             {
-                this.StatusText = "Requesting camera permission...";
+                this.StatusText = "请求相机权限…";
                 hasPermission = await this.cameraPermissions.RequestPermissionAsync();
             }
 
             if (!hasPermission)
             {
-                this.StatusText = "Camera permission denied. Please grant camera permission in Settings.";
+                this.StatusText = "无相机权限，请在系统设置中授予。";
                 return;
             }
 
-            // Step 2: Initialize and start
-            this.StatusText = "Initializing camera...";
+            this.StatusText = "初始化相机…";
             await this.CameraControl.InitializeCameraAsync(this.cameraProvider);
 
-            this.StatusText = "Starting preview...";
+            this.StatusText = "启动预览…";
             await this.CameraControl.StartCameraAsync();
 
             this.IsCameraRunning = true;
-            this.StatusText = "Camera running - tap to focus, pinch to zoom";
+
+            // 填充分辨率列表
+            this.Resolutions.Clear();
+            foreach (var r in this.CameraControl.SupportedResolutions)
+                this.Resolutions.Add(r);
+            this.SelectedResolution = this.Resolutions.FirstOrDefault();
+            if (this.SelectedResolution != null)
+                this.CameraControl.PhotoResolution = this.SelectedResolution;
+
+            // 读取缩放范围
+            this.MinZoom = this.cameraProvider.MinZoomFactor ?? 1f;
+            this.MaxZoom = this.cameraProvider.MaxZoomFactor ?? 5f;
+            this.ZoomValue = this.cameraProvider.CurrentZoomFactor ?? 1f;
+
+            this.StatusText = "相机运行中 – 点击对焦，捏合缩放";
         }
         catch (Exception ex)
         {
-            this.StatusText = $"Failed to start camera: {ex.Message}";
+            this.StatusText = $"启动失败: {ex.Message}";
         }
     }
 
@@ -86,7 +164,7 @@ public partial class MainViewModel : ViewModelBase
     private async Task TakePhotoAsync()
     {
         if (this.CameraControl == null) return;
-        this.StatusText = "Taking photo...";
+        this.StatusText = "拍照…";
         await this.CameraControl.TakePhotoAsync();
     }
 
@@ -96,6 +174,11 @@ public partial class MainViewModel : ViewModelBase
         if (this.CameraControl == null) return;
         await this.CameraControl.SwitchCameraAsync();
         this.CurrentFacing = this.cameraProvider.CurrentFacing;
+
+        // 切换后刷新缩放范围
+        this.MinZoom = this.cameraProvider.MinZoomFactor ?? 1f;
+        this.MaxZoom = this.cameraProvider.MaxZoomFactor ?? 5f;
+        this.ZoomValue = this.cameraProvider.CurrentZoomFactor ?? 1f;
     }
 
     [RelayCommand]
@@ -105,6 +188,18 @@ public partial class MainViewModel : ViewModelBase
         if (this.CameraControl != null)
             this.CameraControl.DebugMode = this.DebugMode;
     }
+
+    [RelayCommand]
+    private async Task ToggleTorchAsync()
+    {
+        if (this.CameraControl == null) return;
+        this.TorchOn = !this.TorchOn;
+        await this.cameraProvider.SetTorchAsync(this.TorchOn);
+    }
+
+    // ========================================================================
+    //  拍照回调
+    // ========================================================================
 
     private void OnPhotoCaptured(PhotoCaptureResult? result)
     {
@@ -116,18 +211,25 @@ public partial class MainViewModel : ViewModelBase
                 Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
                 $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
             System.IO.File.WriteAllBytes(path, result.ImageData);
-            this.StatusText = $"Photo saved: {result.ImageData.Length / 1024} KB";
+            this.StatusText = $"照片已保存: {result.ImageData.Length / 1024} KB → {path}";
         }
         else
         {
-            this.StatusText = $"Photo failed: {result.ErrorMessage ?? "Unknown"}";
+            this.StatusText = $"拍照失败: {result.ErrorMessage ?? "未知"}";
         }
     }
 
-    [RelayCommand]
-    private async Task ToggleTorchAsync()
+    // ========================================================================
+    //  朝向更新（由 UI 定时轮询或事件触发）
+    // ========================================================================
+
+    public void UpdateOrientation(CameraViewControl control)
     {
-        this.TorchOn = !this.TorchOn;
-        await this.cameraProvider.SetTorchAsync(this.TorchOn);
+        var ori = control.DeviceOrientation;
+        if (ori != null)
+        {
+            this.OrientationInfo =
+                $"Pitch {ori.Pitch,6:F1}°  Roll {ori.Roll,6:F1}°  Yaw {ori.Yaw,6:F1}°  {ori.StateLabel}";
+        }
     }
 }
