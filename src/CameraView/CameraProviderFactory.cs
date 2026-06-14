@@ -45,10 +45,15 @@ public static class CameraProviderFactory
     {
         return new Platforms.macOS.MacCameraProvider();
     }
+#elif BROWSER
+    public static ICameraProvider Create()
+    {
+        return new Platforms.Browser.BrowserCameraProvider();
+    }
 #else
     public static ICameraProvider Create()
     {
-        throw new PlatformNotSupportedException("CameraView 仅支持 Windows、macOS、Linux、Android 和 iOS 平台。");
+        throw new PlatformNotSupportedException("CameraView 仅支持浏览器(WASM)、Windows、macOS、Linux、Android 和 iOS 平台。");
     }
 #endif
 

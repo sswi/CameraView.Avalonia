@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0;net10.0-macos;net10.0-android;net10.0-ios</TargetFrameworks>
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0;net10.0-macos;net10.0-android;net10.0-ios;net10.0-browser</TargetFrameworks>
     <OutputType>Library</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -41,6 +41,7 @@
     <Compile Remove="Platforms\Windows\**" Condition="!$(TargetFramework.Contains('-windows'))" />
     <Compile Remove="Platforms\Linux\**" Condition="!$([MSBuild]::IsOSPlatform('Linux'))" />
     <Compile Remove="Platforms\macOS\**" Condition="!$(TargetFramework.Contains('-macos'))" />
+    <Compile Remove="Platforms\Browser\**" Condition="!$(TargetFramework.Contains('-browser'))" />
   </ItemGroup>
 
 </Project>
