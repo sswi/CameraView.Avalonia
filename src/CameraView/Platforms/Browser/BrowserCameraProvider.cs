@@ -94,6 +94,8 @@ internal partial class BrowserCameraProvider : ICameraProvider
 
     public async Task StartPreviewAsync()
     {
+        // 防止 CameraEnabled 绑定导致的双重调用（第二次 stopCamera 会清空 JS 状态）
+        if (this.started) return;
         try
         {
             var id = this.cameraIds.Count > 0

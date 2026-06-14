@@ -31,11 +31,17 @@ export async function startCamera(deviceId, width, height) {
         _state.video.muted = true;
         _state.video.srcObject = stream;
         await _state.video.play();
+        await new Promise(r => setTimeout(r, 200));
+        // 创建画布 — 放在 startCamera 方法结束前，与异步无关
+        _state.canvas = document.createElement('canvas');
+        _state.canvas.width = _state.width;
+        _state.canvas.height = _state.height;
+        _state.ctx = _state.canvas.getContext('2d', { willReadFrequently: true });
+        console.log('CameraView: ctx created', !!_state.ctx, !!_state.canvas);
         console.log('CameraView: started', deviceId || '(auto)');
         return true;
     } catch (e) {
         console.warn('CameraView: startCamera failed', deviceId, e.message);
-        // 如果 exact 失败，尝试不带约束
         if (deviceId) {
             try {
                 const fallback = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -44,6 +50,16 @@ export async function startCamera(deviceId, width, height) {
                 _state.video.muted = true;
                 _state.video.srcObject = fallback;
                 await _state.video.play();
+                await new Promise(r => setTimeout(r, 200));
+                if (!_state.canvas) {
+                    _state.canvas = document.createElement('canvas');
+                    _state.canvas.width = _state.width;
+                    _state.canvas.height = _state.height;
+                }
+                if (!_state.ctx) {
+                    _state.ctx = _state.canvas.getContext('2d', { willReadFrequently: true });
+                    console.log('CameraView: ctx created (fallback)', !!_state.ctx);
+                }
                 console.log('CameraView: started (fallback)');
                 return true;
             } catch (e2) {
@@ -65,9 +81,14 @@ export function stopCamera() {
 }
 
 export function getFrameData() {
-    if (!_state.ctx || !_state.video) return null;
+    if (!_state.ctx || !_state.video) {
+        console.log('CameraView: getFrameData skipped', {ctx: !!_state.ctx, video: !!_state.video});
+        return null;
+    }
     _state.ctx.drawImage(_state.video, 0, 0, _state.width, _state.height);
-    return new Uint8Array(_state.ctx.getImageData(0, 0, _state.width, _state.height).data.buffer);
+    const imageData = _state.ctx.getImageData(0, 0, _state.width, _state.height);
+    console.log('CameraView: frame', imageData.data.length, 'bytes');
+    return new Uint8Array(imageData.data.buffer);
 }
 
 export function capturePhoto() {
