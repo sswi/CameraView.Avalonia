@@ -1,5 +1,6 @@
 #if WINDOWS
 using Windows.Devices.Enumeration;
+using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
@@ -48,8 +49,8 @@ internal class WindowsCameraProvider : ICameraProvider
         try
         {
             var panel = CurrentFacing == CameraFacing.Back
-                ? Windows.Devices.Enumeration.Panel.Back
-                : Windows.Devices.Enumeration.Panel.Front;
+                ? global::Windows.Devices.Enumeration.Panel.Back
+                : global::Windows.Devices.Enumeration.Panel.Front;
             var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
             var selected = devices.FirstOrDefault(d => d.EnclosureLocation?.Panel == panel)
                 ?? devices.FirstOrDefault();
@@ -68,7 +69,7 @@ internal class WindowsCameraProvider : ICameraProvider
                 StreamingCaptureMode = StreamingCaptureMode.Video,
             });
 
-            CurrentFacing = selected.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front
+            CurrentFacing = selected.EnclosureLocation?.Panel == global::Windows.Devices.Enumeration.Panel.Front
                 ? CameraFacing.Front : CameraFacing.Back;
 
             ReadCapabilities();
@@ -221,7 +222,7 @@ internal class WindowsCameraProvider : ICameraProvider
 
             var target = converted ?? softwareBitmap;
             var pixelCount = (uint)(target.PixelWidth * target.PixelHeight * 4);
-            var buffer = new Buffer(pixelCount);
+            var buffer = new Windows.Storage.Streams.Buffer(pixelCount);
             target.CopyToBuffer(buffer);
 
             using var dataReader = DataReader.FromBuffer(buffer);

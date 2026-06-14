@@ -149,7 +149,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
             if (string.IsNullOrEmpty(dataUrl)) return Task.CompletedTask;
 
             // data:image/jpeg;base64,/9j/4AAQ...
-            var base64 = dataUrl.AsSpan(dataUrl.IndexOf(',') + 1);
+            var base64 = dataUrl.Substring(dataUrl.IndexOf(',') + 1);
             var jpeg = Convert.FromBase64String(base64);
             this.PhotoCaptured?.Invoke(this, jpeg);
         }
