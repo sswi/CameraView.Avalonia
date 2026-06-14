@@ -27,7 +27,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
     private static partial byte[]? GetFrameDataJS();
 
     [JSImport("capturePhoto", "cameraView.js")]
-    private static partial Task<byte[]> CapturePhotoJS();
+    private static partial string CapturePhotoJS();
 
     // ========================================================================
     //  成员变量
@@ -141,18 +141,24 @@ internal partial class BrowserCameraProvider : ICameraProvider
     //  拍照（Canvas.toBlob → JPEG 字节）
     // ========================================================================
 
-    public async Task TakePhotoAsync()
+    public Task TakePhotoAsync()
     {
         try
         {
-            var jpeg = await CapturePhotoJS();
-            if (jpeg.Length > 0)
-                this.PhotoCaptured?.Invoke(this, jpeg);
+            var dataUrl = CapturePhotoJS();
+            if (string.IsNullOrEmpty(dataUrl)) return Task.CompletedTask;
+
+            // data:image/jpeg;base64,/9j/4AAQ...
+            var base64 = dataUrl.AsSpan(dataUrl.IndexOf(',') + 1);
+            var jpeg = Convert.FromBase64String(base64);
+            this.PhotoCaptured?.Invoke(this, jpeg);
         }
         catch (Exception ex)
         {
             this.ErrorOccurred?.Invoke(this, $"拍照失败: {ex.Message}");
         }
+
+        return Task.CompletedTask;
     }
 
     // ========================================================================

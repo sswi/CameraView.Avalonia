@@ -31,9 +31,9 @@
 
   <!-- Android-specific packages -->
   <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
-    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" Version="1.5.*" />
-    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.5.*" />
-    <PackageReference Include="Xamarin.AndroidX.Camera.View" Version="1.5.*" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" Version="1.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.View" Version="1.6.1" />
   </ItemGroup>
 
   <!-- Platform-specific source exclusions -->

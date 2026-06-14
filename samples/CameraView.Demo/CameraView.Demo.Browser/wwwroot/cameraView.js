@@ -80,17 +80,11 @@ export function getFrameData() {
 }
 
 /**
- * 拍照（JPEG）
- * @returns {Uint8Array} JPEG 文件字节
+ * 拍照（返回 data URL 供 C# 侧解码，避免 Task<byte[]> 编组限制）
+ * @returns {string} data:image/jpeg;base64,... 或空字符串
  */
-export async function capturePhoto() {
-    if (!_state.ctx || !_state.video) return new Uint8Array(0);
+export function capturePhoto() {
+    if (!_state.ctx || !_state.video) return '';
     _state.ctx.drawImage(_state.video, 0, 0, _state.width, _state.height);
-
-    const blob = await new Promise(resolve =>
-        _state.canvas.toBlob(resolve, 'image/jpeg', 0.92));
-
-    if (!blob) return new Uint8Array(0);
-    const buffer = await blob.arrayBuffer();
-    return new Uint8Array(buffer);
+    return _state.canvas.toDataURL('image/jpeg', 0.92);
 }

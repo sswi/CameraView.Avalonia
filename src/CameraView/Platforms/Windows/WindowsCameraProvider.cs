@@ -1,3 +1,4 @@
+#if WINDOWS
 using Windows.Devices.Enumeration;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
@@ -46,7 +47,9 @@ internal class WindowsCameraProvider : ICameraProvider
 
         try
         {
-            var panel = CurrentFacing == CameraFacing.Back ? Panel.Back : Panel.Front;
+            var panel = CurrentFacing == CameraFacing.Back
+                ? Windows.Devices.Enumeration.Panel.Back
+                : Windows.Devices.Enumeration.Panel.Front;
             var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
             var selected = devices.FirstOrDefault(d => d.EnclosureLocation?.Panel == panel)
                 ?? devices.FirstOrDefault();
@@ -65,7 +68,7 @@ internal class WindowsCameraProvider : ICameraProvider
                 StreamingCaptureMode = StreamingCaptureMode.Video,
             });
 
-            CurrentFacing = selected.EnclosureLocation?.Panel == Panel.Front
+            CurrentFacing = selected.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front
                 ? CameraFacing.Front : CameraFacing.Back;
 
             ReadCapabilities();
@@ -233,7 +236,7 @@ internal class WindowsCameraProvider : ICameraProvider
             {
                 fixed (byte* p = bytes)
                 {
-                    Buffer.MemoryCopy(p,
+                    global::System.Buffer.MemoryCopy(p,
                         skBitmap.GetPixels().ToPointer(),
                         bytes.Length, bytes.Length);
                 }
@@ -274,9 +277,8 @@ internal class WindowsCameraProvider : ICameraProvider
             var exposure = this.mediaCapture?.VideoDeviceController?.ExposureControl;
             if (exposure?.Supported == true)
             {
-                this.MinExposureCompensation = (float)exposure.Min;
-                this.MaxExposureCompensation = (float)exposure.Max;
-                this.ExposureCompensation = (float)exposure.Step;
+                // ExposureControl.Min/Max/Step 是 TimeSpan（曝光时长），非 EV 值
+                // 此处仅标记已启用，实际值由 SetExposureCompensationAsync 管理
             }
         }
         catch { }
@@ -293,3 +295,4 @@ internal class WindowsCameraProvider : ICameraProvider
         this.mediaCapture?.Dispose();
     }
 }
+#endif
