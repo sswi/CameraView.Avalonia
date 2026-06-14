@@ -225,52 +225,80 @@ internal class WindowsCameraProvider : ICameraProvider
     {
         MediaFrameReference? frame = null;
         try { frame = sender.TryAcquireLatestFrame(); } catch { return; }
+        if (frame?.VideoMediaFrame == null) return;
+
+        // 后台异步处理帧（需处理 DX surface → SoftwareBitmap 转换）
+        _ = ProcessFrameAsync(frame);
+    }
+
+    private async Task ProcessFrameAsync(MediaFrameReference frame)
+    {
         using (frame)
         {
-            if (frame?.VideoMediaFrame?.SoftwareBitmap is not SoftwareBitmap softwareBitmap)
-                return;
+            // 获取 SoftwareBitmap，可能来自 Direct3DSurface fallback
+            SoftwareBitmap? softwareBitmap = frame.VideoMediaFrame?.SoftwareBitmap;
 
-            SoftwareBitmap? converted = null;
-            try
+            // 很多摄像头输出 Direct3DSurface（硬件加速），SoftwareBitmap 为 null
+            if (softwareBitmap == null && frame.VideoMediaFrame?.Direct3DSurface != null)
             {
-                // 统一转为 BGRA8
-                if (softwareBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8)
-                    converted = SoftwareBitmap.Convert(softwareBitmap,
-                        BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
-
-                var target = converted ?? softwareBitmap;
-                var width = target.PixelWidth;
-                var height = target.PixelHeight;
-                var pixelCount = (uint)(width * height * 4);
-                var buffer = new global::Windows.Storage.Streams.Buffer(pixelCount);
-                target.CopyToBuffer(buffer);
-
-                using var dataReader = DataReader.FromBuffer(buffer);
-                var bytes = new byte[buffer.Length];
-                dataReader.ReadBytes(bytes);
-
-                var skBitmap = new SKBitmap(width, height,
-                    SKColorType.Bgra8888, SKAlphaType.Premul);
-
-                unsafe
+                try
                 {
-                    fixed (byte* p = bytes)
-                    {
-                        global::System.Buffer.MemoryCopy(p,
-                            skBitmap.GetPixels().ToPointer(),
-                            bytes.Length, bytes.Length);
-                    }
+                    softwareBitmap = await SoftwareBitmap.CreateCopyFromSurfaceAsync(
+                        frame.VideoMediaFrame.Direct3DSurface);
                 }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"DX surface convert error: {ex.Message}");
+                    return;
+                }
+            }
 
-                this.FrameReceived?.Invoke(this, skBitmap);
-            }
-            catch (Exception ex)
+            if (softwareBitmap == null) return;
+
+            using (softwareBitmap)
             {
-                System.Diagnostics.Debug.WriteLine($"Frame error: {ex.Message}");
-            }
-            finally
-            {
-                converted?.Dispose();
+                SoftwareBitmap? converted = null;
+                try
+                {
+                    // 统一转为 BGRA8
+                    if (softwareBitmap.BitmapPixelFormat != BitmapPixelFormat.Bgra8)
+                        converted = SoftwareBitmap.Convert(softwareBitmap,
+                            BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+
+                    var target = converted ?? softwareBitmap;
+                    var width = target.PixelWidth;
+                    var height = target.PixelHeight;
+                    var pixelCount = (uint)(width * height * 4);
+                    var buffer = new global::Windows.Storage.Streams.Buffer(pixelCount);
+                    target.CopyToBuffer(buffer);
+
+                    using var dataReader = DataReader.FromBuffer(buffer);
+                    var bytes = new byte[buffer.Length];
+                    dataReader.ReadBytes(bytes);
+
+                    var skBitmap = new SKBitmap(width, height,
+                        SKColorType.Bgra8888, SKAlphaType.Premul);
+
+                    unsafe
+                    {
+                        fixed (byte* p = bytes)
+                        {
+                            global::System.Buffer.MemoryCopy(p,
+                                skBitmap.GetPixels().ToPointer(),
+                                bytes.Length, bytes.Length);
+                        }
+                    }
+
+                    this.FrameReceived?.Invoke(this, skBitmap);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Frame process error: {ex.Message}");
+                }
+                finally
+                {
+                    converted?.Dispose();
+                }
             }
         }
     }
