@@ -719,27 +719,31 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     }
 
     /// <summary>
-    /// 按控件朝向旋转照片像素，输出无 EXIF 朝向的 JPEG。
-    /// _rotationAngle 来自 FrameAnalyzer（Portrait=90, LandscapeLeft=0, LandscapeRight=180）。
-    /// angle=0 时直接透传（传感器输出已是正确朝向），非零时 Skia 旋转后重编码。
+    /// SKCodec 读取裸传感器像素（不应用 EXIF），按 _rotationAngle 旋转后重编码。
+    /// angle 已合并预览基准 + 照片额外纠正，统一一次旋转。
     /// </summary>
     private static byte[] RotatePhotoData(NSData data, int angle)
     {
         if (angle == 0) return data.ToArray();
 
-        using var ms = new System.IO.MemoryStream(data.ToArray());
-        using var original = SKBitmap.Decode(ms);
-        if (original == null) return data.ToArray();
+        // SKCodec 解码裸像素（不应用 EXIF 朝向）
+        using var codec = SKCodec.Create(new System.IO.MemoryStream(data.ToArray()));
+        if (codec == null) return data.ToArray();
+
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height);
+        using var original = new SKBitmap(info);
+        if (codec.GetPixels(info, original.GetPixels()) != SKCodecResult.Success)
+            return data.ToArray();
 
         bool swap = angle == 90 || angle == 270;
-        int w = swap ? original.Height : original.Width;
-        int h = swap ? original.Width : original.Height;
+        int w = swap ? info.Height : info.Width;
+        int h = swap ? info.Width : info.Height;
 
         using var rotated = new SKBitmap(w, h, original.ColorType, original.AlphaType);
         using var canvas = new SKCanvas(rotated);
         canvas.Translate(w / 2f, h / 2f);
         canvas.RotateDegrees(angle);
-        canvas.Translate(-original.Width / 2f, -original.Height / 2f);
+        canvas.Translate(-info.Width / 2f, -info.Height / 2f);
         canvas.DrawBitmap(original, 0, 0);
 
         using var img = SKImage.FromBitmap(rotated);

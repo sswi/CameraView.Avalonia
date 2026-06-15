@@ -45,22 +45,20 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             };
         }
 
-        if (orientation != UIDeviceOrientation.PortraitUpsideDown)
+        // 合并两次旋转：预览基准 + 照片额外纠正
+        // 朝左: 0 + 270 = 270（逆时针90°）
+        // 朝右: 180 + 0 = 180（不变）
+        // 倒置: 180 + 180 = 360 = 0
+        // 竖屏: 90 + 0 = 90
+        _rotationAngle = orientation switch
         {
-            _rotationAngle = orientation switch
-            {
-                UIDeviceOrientation.Portrait => 90,
-                UIDeviceOrientation.LandscapeLeft => 270,
-                UIDeviceOrientation.LandscapeRight => 0,
-                _ => 90,
-            };
-            this.onRotationChanged?.Invoke(_rotationAngle);
-        }
-        else
-        {
-            _rotationAngle = 180;
-            this.onRotationChanged?.Invoke(_rotationAngle);
-        }
+            UIDeviceOrientation.Portrait => 90,
+            UIDeviceOrientation.LandscapeLeft => 270,
+            UIDeviceOrientation.LandscapeRight => 180,
+            UIDeviceOrientation.PortraitUpsideDown => 0,
+            _ => 90,
+        };
+        this.onRotationChanged?.Invoke(_rotationAngle);
     }
 
     public override void DidOutputSampleBuffer(
