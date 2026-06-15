@@ -120,20 +120,6 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
 
                 this.session.StartRunning();
                 this.started = true;
-
-                // 在 session 启动后设置 photoOutput.MaxPhotoDimensions
-                // 此时 ActiveFormat 已由 SessionPreset 确定，可安全设置
-                if (OperatingSystem.IsIOSVersionAtLeast(16) && this.captureDevice != null && this.photoOutput != null)
-                {
-                    var dims = (this.captureDevice.ActiveFormat.SupportedMaxPhotoDimensions ?? [])
-                        .Where(d => d.Width > 0 && d.Height > 0)
-                        .OrderByDescending(d => d.Width * d.Height)
-                        .FirstOrDefault();
-                    if (dims.Width > 0 && dims.Height > 0)
-                    {
-                        this.photoOutput.MaxPhotoDimensions = new CMVideoDimensions(dims.Width, dims.Height);
-                    }
-                }
             }
             catch (Exception ex)
             {
@@ -157,9 +143,6 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         if (this.photoOutput == null || this.captureDevice == null)
             throw new InvalidOperationException("Camera preview not started.");
 
-        AVCaptureDeviceFormat? previewFormat = null;
-        var captureResolution = this.PhotoResolution;
-
         using (await this.updateCameraLock.LockAsync())
         {
             if (this.photoOutput == null || this.captureDevice == null)
@@ -170,45 +153,9 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                 return;
             this.isCapturingPhoto = true;
 
-            previewFormat = this.captureDevice.ActiveFormat;
-
+            // MAUI 风格：format 已在 UpdateCameraAsync 中设好，拍照时不再切换，不卡顿
             if (OperatingSystem.IsIOSVersionAtLeast(16))
             {
-                // 查找支持目标拍照分辨率的 format
-                var captureTarget = this.GetBestCaptureFormatAndResolutionForPhoto(this.PhotoResolution);
-                captureResolution = captureTarget.Resolution;
-
-                // 临时切换到支持高分辨率的 format
-                if (captureTarget.Format != null && !ReferenceEquals(this.captureDevice.ActiveFormat, captureTarget.Format))
-                {
-                    try
-                    {
-                        this.captureDevice.LockForConfiguration(out var lockError);
-                        if (lockError != null)
-                        {
-                            this.isCapturingPhoto = false;
-                            this.ErrorOccurred?.Invoke(this, $"Lock device failed: {lockError.LocalizedDescription}");
-                            return;
-                        }
-                        try
-                        {
-                            this.captureDevice.ActiveFormat = captureTarget.Format;
-                        }
-                        finally
-                        {
-                            this.captureDevice.UnlockForConfiguration();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        this.isCapturingPhoto = false;
-                        this.ErrorOccurred?.Invoke(this, $"Switch capture format failed: {ex.Message}");
-                        return;
-                    }
-                }
-
-                // 仅在 settings 上设置 MaxPhotoDimensions，不修改 photoOutput 全局属性
-                // photoOutput.MaxPhotoDimensions 变更可能触发 session 重新配置，导致预览中断
             }
 
             var settings = AVCapturePhotoSettings.Create();
@@ -221,8 +168,10 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             };
             if (OperatingSystem.IsIOSVersionAtLeast(16))
             {
-                settings.MaxPhotoDimensions = new CMVideoDimensions(captureResolution.Width, captureResolution.Height);
-                settings.PhotoQualityPrioritization = GetPhotoQualityPrioritization(captureResolution);
+                // 使用 photoOutput.MaxPhotoDimensions（已在 UpdateCameraAsync 中设为合法值）
+                var max = this.photoOutput.MaxPhotoDimensions;
+                if (max.Width > 0 && max.Height > 0)
+                    settings.MaxPhotoDimensions = max;
             }
 
             currentPhotoDelegate?.Dispose();
@@ -231,7 +180,6 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                 {
                     currentPhotoDelegate = null;
                     this.isCapturingPhoto = false;
-                    _ = this.RestorePreviewFormatAfterCaptureAsync(previewFormat);
                     var rotated = RotatePhotoData(data, this._rotationAngle);
                     UIKit.UIApplication.SharedApplication.InvokeOnMainThread(() =>
                         this.PhotoCaptured?.Invoke(this, rotated));
@@ -240,7 +188,6 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                 {
                     currentPhotoDelegate = null;
                     this.isCapturingPhoto = false;
-                    _ = this.RestorePreviewFormatAfterCaptureAsync(previewFormat);
                     this.ErrorOccurred?.Invoke(this, error);
                 });
 
@@ -253,7 +200,6 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                 this.isCapturingPhoto = false;
                 this.ErrorOccurred?.Invoke(this, $"CapturePhoto failed: {ex.Message}");
                 currentPhotoDelegate = null;
-                _ = this.RestorePreviewFormatAfterCaptureAsync(previewFormat);
             }
         }
     }
@@ -477,6 +423,19 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                 this.session.AddOutput(this.photoOutput);
 
             this.session.SessionPreset = GetPreviewSessionPreset(this.PhotoResolution);
+
+            // 从当前 ActiveFormat 的 SupportedMaxPhotoDimensions 中找最匹配的目标
+            // 不切换 ActiveFormat（避免预览变糊），只设 photoOutput.MaxPhotoDimensions
+            if (OperatingSystem.IsIOSVersionAtLeast(16) && this.captureDevice != null)
+            {
+                var dims = (this.captureDevice.ActiveFormat.SupportedMaxPhotoDimensions ?? [])
+                    .Where(d => d.Width > 0 && d.Height > 0)
+                    .OrderBy(d => Math.Abs(d.Width - this.PhotoResolution.Width) + Math.Abs(d.Height - this.PhotoResolution.Height))
+                    .FirstOrDefault();
+
+                if (dims.Width > 0 && dims.Height > 0)
+                    this.photoOutput.MaxPhotoDimensions = new CMVideoDimensions(dims.Width, dims.Height);
+            }
         }
         finally
         {
@@ -587,20 +546,25 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         if (this.captureDevice == null)
             return [];
 
+        // MAUI 方式：读 FormatDescription.Dimensions（format 真实像素），
+        // 跳过纯视频 codec（CV420YpCbCr8BiPlanarVideoRange），去重排序
         return this.captureDevice.Formats
-            .SelectMany(format => format.SupportedMaxPhotoDimensions ?? [])
-            .Where(dim => dim.Width > 0 && dim.Height > 0)
-            .Select(dim => new PhotoResolution(dim.Width, dim.Height, CreatePhotoResolutionLabel(dim.Width, dim.Height)))
-            .DistinctBy(resolution => (resolution.Width, resolution.Height))
-            .OrderByDescending(resolution => resolution.Width * resolution.Height)
-            .ThenByDescending(resolution => resolution.Width)
+            .Select(f => new
+            {
+                Dims = ((CMVideoFormatDescription)f.FormatDescription).Dimensions,
+                Codec = (int)f.FormatDescription.VideoCodecType,
+            })
+            .Where(x => x.Dims.Width > 0 && x.Dims.Height > 0)
+            .Where(x => x.Codec != (int)CVPixelFormatType.CV420YpCbCr8BiPlanarVideoRange)
+            .Select(x => new PhotoResolution(
+                (int)x.Dims.Width, (int)x.Dims.Height,
+                CreatePhotoResolutionLabel((int)x.Dims.Width, (int)x.Dims.Height)))
+            .DistinctBy(r => (r.Width, r.Height))
+            .OrderByDescending(r => r.Width * r.Height)
+            .ThenByDescending(r => r.Width)
             .ToList();
     }
 
-    /// <summary>
-    /// 从设备的所有 format 中查找最支持目标拍照分辨率的 format 及其实际可用的拍照分辨率。
-    /// 不限制为当前 ActiveFormat — 预览 format 由 SessionPreset 管理，拍照时临时切换。
-    /// </summary>
     [SupportedOSPlatform("ios16.0")]
     private (AVCaptureDeviceFormat? Format, PhotoResolution Resolution) GetBestCaptureFormatAndResolutionForPhoto(PhotoResolution preferred)
     {
