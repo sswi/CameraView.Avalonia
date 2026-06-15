@@ -719,24 +719,25 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     }
 
     /// <summary>
-    /// 将照片数据按当前设备朝向旋转像素后输出。
-    /// SKBitmap.Decode 自动应用 JPEG 内置的 AVFoundation 朝向标记得到正像素，
-    /// 然后按 _rotationAngle（来自 FrameAnalyzer 的控件朝向）额外旋转。
-    /// LandscapeRight 和 PortraitUpsideDown 需要 180° 翻转。
+    /// 按控件朝向旋转照片像素，输出无 EXIF 朝向的 JPEG。
+    /// _rotationAngle 来自 FrameAnalyzer（Portrait=90, LandscapeLeft=0, LandscapeRight=180）。
+    /// angle=0 时直接透传（传感器输出已是正确朝向），非零时 Skia 旋转后重编码。
     /// </summary>
     private static byte[] RotatePhotoData(NSData data, int angle)
     {
-        // 只有 LandscapeRight(180) 和 PortraitUpsideDown(180) 需要旋转
-        // Portrait(90) 和 LandscapeLeft(0)：SKBitmap.Decode 已经通过 EXIF 摆正
-        if (angle == 0 || angle == 90) return data.ToArray();
+        if (angle == 0) return data.ToArray();
 
         using var ms = new System.IO.MemoryStream(data.ToArray());
         using var original = SKBitmap.Decode(ms);
         if (original == null) return data.ToArray();
 
-        using var rotated = new SKBitmap(original.Width, original.Height, original.ColorType, original.AlphaType);
+        bool swap = angle == 90 || angle == 270;
+        int w = swap ? original.Height : original.Width;
+        int h = swap ? original.Width : original.Height;
+
+        using var rotated = new SKBitmap(w, h, original.ColorType, original.AlphaType);
         using var canvas = new SKCanvas(rotated);
-        canvas.Translate(original.Width / 2f, original.Height / 2f);
+        canvas.Translate(w / 2f, h / 2f);
         canvas.RotateDegrees(angle);
         canvas.Translate(-original.Width / 2f, -original.Height / 2f);
         canvas.DrawBitmap(original, 0, 0);
