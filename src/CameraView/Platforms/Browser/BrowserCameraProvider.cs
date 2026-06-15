@@ -37,15 +37,22 @@ internal partial class BrowserCameraProvider : ICameraProvider
     [JSImport("enumerateCameras", "cameraModule")]
     private static partial Task<string> EnumerateCamerasJS();
 
+    [JSImport("getSupportedResolutions", "cameraModule")]
+    private static partial string GetSupportedResolutionsJS();
+
+    [JSImport("getCameraInfo", "cameraModule")]
+    private static partial string GetCameraInfoJS();
+
     // ========================================================================
     //  成员变量
     // ========================================================================
 
-    private readonly int frameWidth = 640;
-    private readonly int frameHeight = 480;
+    private int frameWidth = 640;
+    private int frameHeight = 480;
     private CancellationTokenSource? cts;
     private bool started;
     private List<string> cameraIds = [];
+    private List<PhotoResolution> supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
     private int currentCameraIndex;
 
     public bool IsInitialized => true;
@@ -55,7 +62,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
     public float? CurrentZoomFactor { get; private set; }
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
     public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0];
-    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
+    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => this.supportedPhotoResolutions;
     public float MinExposureCompensation { get; private set; }
     public float MaxExposureCompensation { get; private set; }
     public float ExposureCompensation { get; private set; }
@@ -84,6 +91,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
                 .Where(id => !string.IsNullOrEmpty(id))
                 .ToList()!;
             this.currentCameraIndex = 0;
+            this.supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
         }
         catch { }
     }
@@ -98,16 +106,17 @@ internal partial class BrowserCameraProvider : ICameraProvider
         if (this.started) return;
         try
         {
+            this.PhotoResolution = this.GetBestSupportedPhotoResolution(this.PhotoResolution);
             var id = this.cameraIds.Count > 0
                 ? this.cameraIds[this.currentCameraIndex] : "";
-            bool ok = await StartCameraJS(id, this.frameWidth, this.frameHeight);
+            bool ok = await StartCameraJS(id, this.PhotoResolution.Width, this.PhotoResolution.Height);
 
             if (!ok && this.cameraIds.Count > 1)
             {
                 for (int i = 0; i < this.cameraIds.Count; i++)
                 {
                     if (i == this.currentCameraIndex) continue;
-                    ok = await StartCameraJS(this.cameraIds[i], this.frameWidth, this.frameHeight);
+                    ok = await StartCameraJS(this.cameraIds[i], this.PhotoResolution.Width, this.PhotoResolution.Height);
                     if (ok) { this.currentCameraIndex = i; break; }
                 }
             }
@@ -115,7 +124,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
             // 最后兜底：不指定 deviceId，让浏览器自动选
             if (!ok)
             {
-                ok = await StartCameraJS("", this.frameWidth, this.frameHeight);
+                ok = await StartCameraJS("", this.PhotoResolution.Width, this.PhotoResolution.Height);
             }
 
             if (!ok)
@@ -124,6 +133,7 @@ internal partial class BrowserCameraProvider : ICameraProvider
                 return;
             }
 
+            this.RefreshRuntimeCameraState();
             this.started = true;
             this.cts = new CancellationTokenSource();
             _ = FrameLoopAsync(this.cts.Token);
@@ -219,12 +229,83 @@ internal partial class BrowserCameraProvider : ICameraProvider
     public Task SetTorchAsync(bool on) => Task.CompletedTask;
     public Task SetZoomAsync(float zoomFactor) => Task.CompletedTask;
     public Task SetFlashModeAsync(FlashMode mode) { FlashMode = mode; return Task.CompletedTask; }
-    public Task SetPhotoResolutionAsync(PhotoResolution resolution) { PhotoResolution = resolution; return Task.CompletedTask; }
+    public async Task SetPhotoResolutionAsync(PhotoResolution resolution)
+    {
+        this.PhotoResolution = this.GetBestSupportedPhotoResolution(resolution);
+
+        if (this.started)
+        {
+            await StopPreviewAsync();
+            await StartPreviewAsync();
+        }
+    }
     public Task SetExposureCompensationAsync(float ev) { ExposureCompensation = ev; return Task.CompletedTask; }
 
     public void Dispose()
     {
         StopPreviewAsync();
+    }
+
+    private void RefreshRuntimeCameraState()
+    {
+        try
+        {
+            var supportedJson = GetSupportedResolutionsJS();
+            if (!string.IsNullOrWhiteSpace(supportedJson))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(supportedJson);
+                var resolutions = doc.RootElement.EnumerateArray()
+                    .Select(e => new PhotoResolution(
+                        e.GetProperty("width").GetInt32(),
+                        e.GetProperty("height").GetInt32(),
+                        e.GetProperty("label").GetString() ?? string.Empty))
+                    .DistinctBy(r => (r.Width, r.Height))
+                    .OrderByDescending(r => r.Width * r.Height)
+                    .ThenByDescending(r => r.Width)
+                    .ToList();
+
+                if (resolutions.Count > 0)
+                    this.supportedPhotoResolutions = resolutions;
+            }
+
+            var infoJson = GetCameraInfoJS();
+            if (!string.IsNullOrWhiteSpace(infoJson))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(infoJson);
+                if (doc.RootElement.TryGetProperty("width", out var width))
+                    this.frameWidth = width.GetInt32();
+                if (doc.RootElement.TryGetProperty("height", out var height))
+                    this.frameHeight = height.GetInt32();
+                if (doc.RootElement.TryGetProperty("deviceId", out var deviceIdProperty))
+                {
+                    var activeDeviceId = deviceIdProperty.GetString();
+                    var index = this.cameraIds.FindIndex(id => id == activeDeviceId);
+                    if (index >= 0)
+                        this.currentCameraIndex = index;
+                }
+            }
+
+            this.PhotoResolution = this.GetBestSupportedPhotoResolution(this.PhotoResolution);
+        }
+        catch
+        {
+        }
+    }
+
+    private PhotoResolution GetBestSupportedPhotoResolution(PhotoResolution preferred)
+    {
+        if (this.supportedPhotoResolutions.Count == 0)
+            return preferred;
+
+        var exact = this.supportedPhotoResolutions.FirstOrDefault(r => r.Width == preferred.Width && r.Height == preferred.Height);
+        if (exact != null)
+            return exact;
+
+        var preferredPixels = preferred.Width * preferred.Height;
+        return this.supportedPhotoResolutions
+            .OrderBy(r => Math.Abs((r.Width * r.Height) - preferredPixels))
+            .ThenBy(r => Math.Abs(r.AspectRatio - preferred.AspectRatio))
+            .First();
     }
 }
 #endif

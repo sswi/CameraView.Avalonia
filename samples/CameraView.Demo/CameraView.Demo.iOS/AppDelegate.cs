@@ -4,6 +4,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.iOS;
 using Avalonia.Media;
+using CameraView.Demo;
+using CameraView.Demo.iOS.Services;
+using CameraView.Demo.Services;
 
 namespace CameraView.Demo.iOS;
 
@@ -17,6 +20,8 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        PhotoAlbumSaverRegistry.Current = new IosPhotoAlbumSaver();
+
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
     }

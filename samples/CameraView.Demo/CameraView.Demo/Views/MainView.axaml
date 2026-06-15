@@ -12,12 +12,12 @@
     x:DataType="vm:MainViewModel"
     mc:Ignorable="d">
 
-    <Grid RowDefinitions="*,Auto">
+    <!-- 响应式布局：横屏左画面右设置，竖屏上画面下设置 -->
+    <Grid x:Name="RootGrid">
 
         <!-- Camera Preview -->
         <cv:CameraViewControl
             x:Name="CameraControl"
-            Grid.Row="0"
             CameraEnabled="{Binding IsCameraRunning}"
             CameraFacing="{Binding CurrentFacing}"
             DebugMode="{Binding DebugMode}"
@@ -30,19 +30,20 @@
 
         <!-- Control Panel -->
         <ScrollViewer
-            Grid.Row="1"
-            MaxHeight="440"
+            x:Name="SettingsPanel"
             Background="#E0000000"
             Padding="16,12">
             <StackPanel Spacing="10">
 
                 <!-- Status -->
-                <TextBlock
-                    HorizontalAlignment="Center"
-                    FontSize="13"
-                    Foreground="#CCFFFFFF"
-                    Text="{Binding StatusText}"
-                    TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                    <TextBlock
+                        FontSize="13"
+                        Foreground="Coral"
+                        Text="{Binding StatusText}"
+                        TextWrapping="Wrap" Width="220" IsVisible="False" />
+                    <Button x:Name="OpenStatusButton" Content="查看状态" Width="90" />
+                </StackPanel>
 
                 <Separator Background="#33FFFFFF" Height="1" />
 
@@ -94,36 +95,18 @@
 
                 <!-- Flash Mode -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="12"
-                        Foreground="#AAFFFFFF"
-                        Text="Flash:" />
-                    <ComboBox
-                        Width="100"
-                        Background="#30FFFFFF"
-                        BorderThickness="0"
-                        FontSize="11"
-                        Foreground="White"
-                        ItemsSource="{Binding FlashModes}"
-                        SelectedItem="{Binding SelectedFlashMode}" />
+                    <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#AAFFFFFF" Text="Flash:" />
+                    <ComboBox Width="100" Background="#30FFFFFF" BorderThickness="0"
+                              FontSize="11" Foreground="White"
+                              ItemsSource="{Binding FlashModes}" SelectedItem="{Binding SelectedFlashMode}" />
                 </StackPanel>
 
                 <!-- Resolution -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="12"
-                        Foreground="#AAFFFFFF"
-                        Text="Res:" />
-                    <ComboBox
-                        Width="220"
-                        Background="#30FFFFFF"
-                        BorderThickness="0"
-                        FontSize="11"
-                        Foreground="White"
-                        ItemsSource="{Binding Resolutions}"
-                        SelectedItem="{Binding SelectedResolution}">
+                    <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="#AAFFFFFF" Text="Res:" />
+                    <ComboBox Width="220" Background="#30FFFFFF" BorderThickness="0"
+                              FontSize="11" Foreground="White"
+                              ItemsSource="{Binding Resolutions}" SelectedItem="{Binding SelectedResolution}">
                         <ComboBox.ItemTemplate>
                             <DataTemplate DataType="md:PhotoResolution">
                                 <TextBlock Text="{Binding}" Foreground="White" FontSize="11" />
@@ -134,73 +117,46 @@
 
                 <!-- Zoom -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock
-                        Width="36"
-                        VerticalAlignment="Center"
-                        FontSize="12"
-                        Foreground="#AAFFFFFF"
-                        Text="Zoom:" />
-                    <Slider
-                        Width="140"
-                        Maximum="{Binding MaxZoom}"
-                        Minimum="{Binding MinZoom}"
-                        Value="{Binding ZoomValue}" />
-                    <TextBlock
-                        Width="36"
-                        FontSize="12"
-                        Foreground="White"
-                        Text="{Binding ZoomValue, StringFormat='{}{0:F1}x'}" />
+                    <TextBlock Width="36" VerticalAlignment="Center" FontSize="12" Foreground="#AAFFFFFF" Text="Zoom:" />
+                    <Slider Width="140" Maximum="{Binding MaxZoom}" Minimum="{Binding MinZoom}" Value="{Binding ZoomValue}" />
+                    <TextBlock Width="36" FontSize="12" Foreground="White" Text="{Binding ZoomValue, StringFormat='{}{0:F1}x'}" />
                 </StackPanel>
 
                 <!-- Exposure -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock
-                        Width="36"
-                        VerticalAlignment="Center"
-                        FontSize="12"
-                        Foreground="#AAFFFFFF"
-                        Text="EV:" />
-                    <Slider
-                        Width="140"
-                        Maximum="2"
-                        Minimum="-2"
-                        TickFrequency="0.5"
-                        Value="{Binding ExposureValue}" />
-                    <TextBlock
-                        Width="44"
-                        FontSize="12"
-                        Foreground="White"
-                        Text="{Binding ExposureValue, StringFormat='{}{0:F1}EV'}" />
+                    <TextBlock Width="36" VerticalAlignment="Center" FontSize="12" Foreground="#AAFFFFFF" Text="EV:" />
+                    <Slider Width="140" Maximum="2" Minimum="-2" TickFrequency="0.5" Value="{Binding ExposureValue}" />
+                    <TextBlock Width="44" FontSize="12" Foreground="White" Text="{Binding ExposureValue, StringFormat='{}{0:F1}EV'}" />
                 </StackPanel>
 
                 <!-- Orientation / Device Info -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock
-                        FontSize="12"
-                        Foreground="#AAFFFFFF"
-                        Text="Orientation:" />
-                    <TextBlock
-                        FontSize="12"
-                        Foreground="White"
-                        Text="{Binding OrientationInfo}" />
+                    <TextBlock FontSize="12" Foreground="#AAFFFFFF" Text="Orientation:" />
+                    <TextBlock FontSize="12" Foreground="White" Text="{Binding OrientationInfo}" />
                 </StackPanel>
 
                 <Separator Background="#33FFFFFF" Height="1" />
 
-                <!-- Status indicators -->
                 <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
-                    <TextBlock
-                        FontSize="11"
-                        Foreground="#AAFFFFFF"
-                        Text="{Binding CurrentFacing, StringFormat='Camera: {0}'}" />
-                    <TextBlock
-                        FontSize="11"
-                        Foreground="#AAFFFFFF"
-                        Text="{Binding IsCameraRunning, StringFormat='Preview: {0}'}" />
+                    <TextBlock FontSize="11" Foreground="#AAFFFFFF" Text="{Binding CurrentFacing, StringFormat='Camera: {0}'}" />
+                    <TextBlock FontSize="11" Foreground="#AAFFFFFF" Text="{Binding IsCameraRunning, StringFormat='Preview: {0}'}" />
                 </StackPanel>
 
             </StackPanel>
         </ScrollViewer>
 
+        <!-- Overlay for mobile: show status and copy button -->
+        <Border x:Name="StatusOverlay" Background="#CC000000" CornerRadius="8" Padding="12" Width="320" Height="520" IsVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center">
+         <ScrollViewer>
+            <StackPanel Spacing="8">
+                <TextBlock Text="当前状态:" FontWeight="Bold" Foreground="White" />
+                <TextBox x:Name="OverlayStatusBox" IsReadOnly="True" TextWrapping="Wrap" Height="120" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button x:Name="OverlayCopyButton" Content="复制到剪贴板" Width="140" />
+                    <Button x:Name="OverlayCloseButton" Content="关闭" Width="80" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+        </Border>
     </Grid>
 </UserControl>

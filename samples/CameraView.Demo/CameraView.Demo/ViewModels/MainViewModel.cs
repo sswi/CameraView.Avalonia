@@ -2,9 +2,11 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CameraView.Models;
+using CameraView.Demo.Services;
 using CameraView.Services;
 
 namespace CameraView.Demo.ViewModels;
@@ -207,11 +209,16 @@ public partial class MainViewModel : ViewModelBase
 
         if (result.IsSuccess && result.ImageData != null)
         {
-            var path = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-                $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
+            // 保存到应用文档目录（所有平台通用）
+            var dir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            var path = System.IO.Path.Combine(dir, $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
             System.IO.File.WriteAllBytes(path, result.ImageData);
-            this.StatusText = $"照片已保存: {result.ImageData.Length / 1024} KB → {path}";
+            this.StatusText = $"照片已保存: {result.ImageData.Length / 1024} KB";
+            if (PhotoAlbumSaverRegistry.Current != null)
+            {
+                this.StatusText = $"照片已拍摄: {result.ImageData.Length / 1024} KB，正在写入相册…";
+                _ = this.SavePhotoToAlbumAsync(result.ImageData);
+            }
         }
         else
         {
@@ -230,6 +237,31 @@ public partial class MainViewModel : ViewModelBase
         {
             this.OrientationInfo =
                 $"Pitch {ori.Pitch,6:F1}°  Roll {ori.Roll,6:F1}°  Yaw {ori.Yaw,6:F1}°  {ori.StateLabel}";
+        }
+    }
+
+    private async Task SavePhotoToAlbumAsync(byte[] imageBytes)
+    {
+        try
+        {
+            var photoAlbumSaver = PhotoAlbumSaverRegistry.Current;
+            if (photoAlbumSaver == null)
+            {
+                return;
+            }
+
+            var saveError = await photoAlbumSaver.SavePhotoAsync(imageBytes).ConfigureAwait(false);
+            Dispatcher.UIThread.Post(() =>
+            {
+                this.StatusText = saveError == null ? "照片已保存到相册" : $"相册写入失败: {saveError}";
+            });
+        }
+        catch (Exception ex)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                this.StatusText = $"相册写入异常: {ex.Message}";
+            });
         }
     }
 }

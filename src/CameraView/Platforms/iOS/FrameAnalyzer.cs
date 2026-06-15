@@ -2,19 +2,24 @@ using AVFoundation;
 using CoreMedia;
 using CoreVideo;
 using SkiaSharp;
+using UIKit;
 
 namespace CameraView.Platforms.iOS;
 
 internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
 {
     private readonly Action<SKBitmap> onFrameReceived;
+    private readonly Action<int>? onRotationChanged;
     private uint? skippedFrames;
     private uint? frameRate;
     private bool disposed;
+    private int _rotationAngle = 90;
 
-    public FrameAnalyzer(Action<SKBitmap> onFrameReceived)
+    public FrameAnalyzer(Action<SKBitmap> onFrameReceived, Action<int>? onRotationChanged = null)
     {
         this.onFrameReceived = onFrameReceived;
+        this.onRotationChanged = onRotationChanged;
+        this.onRotationChanged?.Invoke(90); // 初始值
     }
 
     public uint? FrameRate
@@ -25,6 +30,33 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             this.frameRate = value;
             this.skippedFrames = null;
         }
+    }
+
+    /// <summary>根据设备方向设置帧旋转角度（由 iOSCameraProvider 调用）</summary>
+    public void SetDeviceOrientation(UIDeviceOrientation orientation)
+    {
+        if (orientation == UIDeviceOrientation.Unknown)
+        {
+            orientation = UIApplication.SharedApplication.StatusBarOrientation switch
+            {
+                UIInterfaceOrientation.LandscapeLeft => UIDeviceOrientation.LandscapeRight,
+                UIInterfaceOrientation.LandscapeRight => UIDeviceOrientation.LandscapeLeft,
+                _ => UIDeviceOrientation.Portrait,
+            };
+        }
+
+        if (orientation != UIDeviceOrientation.PortraitUpsideDown)
+        {
+            _rotationAngle = orientation switch
+            {
+                UIDeviceOrientation.Portrait => 90,
+                UIDeviceOrientation.LandscapeLeft => 0,
+                UIDeviceOrientation.LandscapeRight => 180,
+                _ => 90,
+            };
+            this.onRotationChanged?.Invoke(_rotationAngle);
+        }
+        // 倒立：不改变角度，也不通知
     }
 
     public override void DidOutputSampleBuffer(
@@ -39,9 +71,7 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             if (this.FrameRate is uint r && r > 1)
             {
                 if (this.skippedFrames != null && ++this.skippedFrames < r)
-                {
                     return;
-                }
                 this.skippedFrames = 0;
             }
 
@@ -51,49 +81,55 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             pixelBuffer.Lock(CVPixelBufferLock.ReadOnly);
             try
             {
-                var pixelFormat = pixelBuffer.PixelFormatType;
-
-                if (pixelFormat == CVPixelFormatType.CV32BGRA)
-                {
-                    // 直接内存拷贝（BGRA → SKBitmap），跳过 CIImage/CGImage 中间层
-                    CopyBGRAFromPixelBuffer(pixelBuffer);
-                }
+                if (pixelBuffer.PixelFormatType == CVPixelFormatType.CV32BGRA)
+                    CopyBGRA(pixelBuffer);
                 else
-                {
-                    // 回退：通过 CIImage 转换（兼容非 BGRA 输出格式）
                     CopyViaCIImage(pixelBuffer);
-                }
             }
             finally
             {
                 pixelBuffer.Unlock(CVPixelBufferLock.ReadOnly);
             }
         }
-        catch
-        {
-            // Frame processing failed, continue
-        }
+        catch { }
         finally
         {
             try { sampleBuffer.Dispose(); } catch { }
         }
     }
 
-    private unsafe void CopyBGRAFromPixelBuffer(CVPixelBuffer pixelBuffer)
+    private unsafe void CopyBGRA(CVPixelBuffer pixelBuffer)
     {
-        int width = (int)pixelBuffer.Width;
-        int height = (int)pixelBuffer.Height;
-        int bytesPerRow = (int)pixelBuffer.BytesPerRow;
-        var baseAddress = pixelBuffer.BaseAddress;
+        int w = (int)pixelBuffer.Width;
+        int h = (int)pixelBuffer.Height;
+        int bpr = (int)pixelBuffer.BytesPerRow;
+        var baseAddr = pixelBuffer.BaseAddress;
+        if (baseAddr == IntPtr.Zero) return;
 
-        if (baseAddress == IntPtr.Zero) return;
+        int angle = _rotationAngle;
+        bool needRotate = angle == 90 || angle == 270;
+        int dw = needRotate ? h : w;
+        int dh = needRotate ? w : h;
 
-        var skBitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
-        Buffer.MemoryCopy(
-            baseAddress.ToPointer(),
-            skBitmap.GetPixels().ToPointer(),
-            height * bytesPerRow,
-            height * bytesPerRow);
+        var skBitmap = new SKBitmap(dw, dh, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+        if (angle == 0)
+        {
+            System.Buffer.MemoryCopy(
+                baseAddr.ToPointer(), skBitmap.GetPixels().ToPointer(), dh * bpr, dh * bpr);
+        }
+        else
+        {
+            using var temp = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
+            System.Buffer.MemoryCopy(
+                baseAddr.ToPointer(), temp.GetPixels().ToPointer(), h * bpr, h * bpr);
+
+            using var canvas = new SKCanvas(skBitmap);
+            canvas.Translate(dw / 2f, dh / 2f);
+            canvas.RotateDegrees(angle);
+            canvas.Translate(-w / 2f, -h / 2f);
+            canvas.DrawBitmap(temp, 0, 0);
+        }
 
         this.onFrameReceived(skBitmap);
     }
@@ -107,36 +143,23 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
         {
             using var skBitmap = CGImageToSKBitmap(cgImage);
             if (skBitmap != null)
-            {
                 this.onFrameReceived(skBitmap);
-            }
         }
     }
 
     private static SKBitmap? CGImageToSKBitmap(CoreGraphics.CGImage cgImage)
     {
-        var width = (int)cgImage.Width;
-        var height = (int)cgImage.Height;
-        var bytesPerRow = (int)cgImage.BytesPerRow;
-        var data = new byte[height * bytesPerRow];
-
-        using var colorSpace = CoreGraphics.CGColorSpace.CreateDeviceRGB();
-        using var context = new CoreGraphics.CGBitmapContext(
-            data, width, height, 8, bytesPerRow,
-            colorSpace, CoreGraphics.CGBitmapFlags.PremultipliedFirst | CoreGraphics.CGBitmapFlags.ByteOrder32Little);
-
-        context.DrawImage(new CoreGraphics.CGRect(0, 0, width, height), cgImage);
-
-        var skBitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
-        unsafe
-        {
-            fixed (byte* src = data)
-            {
-                Buffer.MemoryCopy(src, skBitmap.GetPixels().ToPointer(), data.Length, data.Length);
-            }
-        }
-
-        return skBitmap;
+        int w = (int)cgImage.Width, h = (int)cgImage.Height;
+        int bpr = (int)cgImage.BytesPerRow;
+        var data = new byte[h * bpr];
+        using var cs = CoreGraphics.CGColorSpace.CreateDeviceRGB();
+        using var ctx = new CoreGraphics.CGBitmapContext(
+            data, w, h, 8, bpr, cs,
+            CoreGraphics.CGBitmapFlags.PremultipliedFirst | CoreGraphics.CGBitmapFlags.ByteOrder32Little);
+        ctx.DrawImage(new CoreGraphics.CGRect(0, 0, w, h), cgImage);
+        var sk = new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
+        unsafe { fixed (byte* p = data) { System.Buffer.MemoryCopy(p, sk.GetPixels().ToPointer(), data.Length, data.Length); } }
+        return sk;
     }
 
     protected override void Dispose(bool disposing)

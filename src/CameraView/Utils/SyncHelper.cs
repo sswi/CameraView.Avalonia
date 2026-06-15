@@ -7,7 +7,7 @@ namespace CameraView.Utils;
 /// </summary>
 public class SyncHelper
 {
-    private readonly object syncRoot = new();
+    private readonly Lock syncRoot = new();
     private Task? currentTask;
 
     public bool IsRunning

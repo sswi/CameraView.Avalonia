@@ -17,11 +17,14 @@ namespace CameraView.Platforms.Windows;
 /// </summary>
 internal class WindowsCameraProvider : ICameraProvider
 {
+    private sealed record PhotoEncodingOption(PhotoResolution Resolution, ImageEncodingProperties Properties);
+
     private MediaCapture? mediaCapture;
     private MediaFrameReader? frameReader;
     private bool started;
     private List<DeviceInformation>? cameraDevices;
     private int currentDeviceIndex;
+    private List<PhotoEncodingOption> supportedPhotoEncodingOptions = [];
 
     public bool IsInitialized => this.mediaCapture != null;
     public CameraFacing CurrentFacing { get; private set; } = CameraFacing.Back;
@@ -30,7 +33,9 @@ internal class WindowsCameraProvider : ICameraProvider
     public float? CurrentZoomFactor { get; private set; }
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
     public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0];
-    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
+    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => this.supportedPhotoEncodingOptions.Count > 0
+        ? this.supportedPhotoEncodingOptions.Select(x => x.Resolution).ToList()
+        : PhotoResolution.DefaultPresets;
     public float MinExposureCompensation { get; private set; }
     public float MaxExposureCompensation { get; private set; }
     public float ExposureCompensation { get; private set; }
@@ -97,6 +102,9 @@ internal class WindowsCameraProvider : ICameraProvider
                 ? CameraFacing.Front : CameraFacing.Back;
 
             ReadCapabilities();
+            this.UpdateSupportedPhotoResolutions();
+            this.PhotoResolution = this.GetBestSupportedPhotoResolution(this.PhotoResolution);
+            await this.ApplySelectedPhotoResolutionAsync();
         }
         catch (Exception ex)
         {
@@ -164,8 +172,9 @@ internal class WindowsCameraProvider : ICameraProvider
         try
         {
             var stream = new InMemoryRandomAccessStream();
+            var encodingProperties = this.GetSelectedPhotoEncodingProperties() ?? ImageEncodingProperties.CreateJpeg();
             await this.mediaCapture.CapturePhotoToStreamAsync(
-                ImageEncodingProperties.CreateJpeg(), stream);
+                encodingProperties, stream);
 
             using var inputStream = stream.GetInputStreamAt(0);
             using var reader = new DataReader(inputStream);
@@ -222,9 +231,9 @@ internal class WindowsCameraProvider : ICameraProvider
 
     public Task SetPhotoResolutionAsync(PhotoResolution resolution)
     {
-        this.PhotoResolution = resolution;
-        // Windows 摄像头可在启动前设置分辨率，这里仅记录偏好
-        return Task.CompletedTask;
+        this.UpdateSupportedPhotoResolutions();
+        this.PhotoResolution = this.GetBestSupportedPhotoResolution(resolution);
+        return this.ApplySelectedPhotoResolutionAsync();
     }
 
     public Task SetExposureCompensationAsync(float ev)
@@ -357,6 +366,97 @@ internal class WindowsCameraProvider : ICameraProvider
             }
         }
         catch { }
+    }
+
+    private void UpdateSupportedPhotoResolutions()
+    {
+        try
+        {
+            var options = this.mediaCapture?.VideoDeviceController?
+                .GetAvailableMediaStreamProperties(MediaStreamType.Photo)
+                .OfType<ImageEncodingProperties>()
+                .Where(p => p.Width > 0 && p.Height > 0)
+                .GroupBy(p => (p.Width, p.Height))
+                .Select(g => new PhotoEncodingOption(
+                    new PhotoResolution((int)g.Key.Width, (int)g.Key.Height,
+                        CreatePhotoResolutionLabel((int)g.Key.Width, (int)g.Key.Height)),
+                    g.First()))
+                .OrderByDescending(x => x.Resolution.Width * x.Resolution.Height)
+                .ThenByDescending(x => x.Resolution.Width)
+                .ToList();
+
+            this.supportedPhotoEncodingOptions = options is { Count: > 0 }
+                ? options
+                : [];
+        }
+        catch
+        {
+            this.supportedPhotoEncodingOptions = [];
+        }
+    }
+
+    private PhotoResolution GetBestSupportedPhotoResolution(PhotoResolution preferred)
+    {
+        if (this.supportedPhotoEncodingOptions.Count == 0)
+            return preferred;
+
+        var resolutions = this.supportedPhotoEncodingOptions.Select(x => x.Resolution).ToList();
+        var exact = resolutions.FirstOrDefault(r => r.Width == preferred.Width && r.Height == preferred.Height);
+        if (exact != null)
+            return exact;
+
+        var preferredPixels = preferred.Width * preferred.Height;
+        return resolutions
+            .OrderBy(resolution => Math.Abs((resolution.Width * resolution.Height) - preferredPixels))
+            .ThenBy(resolution => Math.Abs(((double)resolution.Width / resolution.Height) - preferred.AspectRatio))
+            .First();
+    }
+
+    private ImageEncodingProperties? GetSelectedPhotoEncodingProperties()
+    {
+        if (this.supportedPhotoEncodingOptions.Count == 0)
+            return null;
+
+        var exact = this.supportedPhotoEncodingOptions.FirstOrDefault(x =>
+            x.Resolution.Width == this.PhotoResolution.Width && x.Resolution.Height == this.PhotoResolution.Height);
+        if (exact != null)
+            return exact.Properties;
+
+        var best = this.GetBestSupportedPhotoResolution(this.PhotoResolution);
+        return this.supportedPhotoEncodingOptions
+            .FirstOrDefault(x => x.Resolution.Width == best.Width && x.Resolution.Height == best.Height)
+            ?.Properties;
+    }
+
+    private async Task ApplySelectedPhotoResolutionAsync()
+    {
+        if (this.mediaCapture == null)
+            return;
+
+        var properties = this.GetSelectedPhotoEncodingProperties();
+        if (properties == null)
+            return;
+
+        try
+        {
+            await this.mediaCapture.SetEncodingPropertiesAsync(MediaStreamType.Photo, properties, null);
+        }
+        catch (Exception ex)
+        {
+            this.ErrorOccurred?.Invoke(this, $"设置拍照分辨率失败: {ex.Message}");
+        }
+    }
+
+    private static string CreatePhotoResolutionLabel(int width, int height)
+    {
+        var ratio = (double)width / height;
+        var megapixels = width * height / 1_000_000d;
+        var ratioLabel = Math.Abs(ratio - 4d / 3d) < 0.03 ? "4:3"
+            : Math.Abs(ratio - 16d / 9d) < 0.03 ? "16:9"
+            : Math.Abs(ratio - 1d) < 0.03 ? "1:1"
+            : $"{ratio:F2}:1";
+
+        return $"{ratioLabel} {megapixels:F1}MP";
     }
 
     // ========================================================================

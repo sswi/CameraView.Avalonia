@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>CameraView.Demo</string>
+	<string>CameraView</string>
 	<key>CFBundleIdentifier</key>
-	<string>companyName.CameraView.Demo</string>
+	<string>cc.xecc.cameraview</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
@@ -16,6 +16,10 @@
 	<string>13.0</string>
 	<key>NSCameraUsageDescription</key>
 	<string>CameraView.Demo needs camera access to show live preview and take photos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CameraView.Demo needs to save photos to your library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CameraView.Demo needs to save photos to your library.</string>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>1</integer>

@@ -6,7 +6,7 @@ namespace CameraView.Models;
 public class PhotoResult
 {
     /// <summary>JPEG 字节</summary>
-    public byte[] ImageData { get; init; } = Array.Empty<byte>();
+    public byte[] ImageData { get; init; } = [];
     /// <summary>宽度</summary>
     public int Width { get; init; }
     /// <summary>高度</summary>

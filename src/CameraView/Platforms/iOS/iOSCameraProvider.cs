@@ -1,7 +1,9 @@
 using AVFoundation;
+using Foundation;
 using CoreGraphics;
 using CoreMedia;
 using CoreVideo;
+using System.Runtime.Versioning;
 using CameraView.Models;
 using CameraView.Services;
 using CameraView.Utils;
@@ -13,6 +15,7 @@ namespace CameraView.Platforms.iOS;
 internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
 {
     private readonly AsyncLock updateCameraLock = new();
+    private List<PhotoResolution> supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
 
     private AVCaptureSession? session;
     private AVCaptureDevice? captureDevice;
@@ -21,10 +24,13 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     private AVCapturePhotoOutput? photoOutput;
     private FrameAnalyzer? frameAnalyzer;
     private NSObject? zoomObserver;
+    private PhotoCaptureDelegate? currentPhotoDelegate; // 防止 GC 回收
+    private bool torchOn;
 
     private bool started;
     private bool disposed;
     private CameraFacing currentFacing = CameraFacing.Back;
+    private int _rotationAngle = 90; // 当前帧旋转角度，由 FrameAnalyzer 更新
 
     public bool IsInitialized => this.session != null;
     public CameraFacing CurrentFacing => this.currentFacing;
@@ -33,7 +39,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     public float? CurrentZoomFactor { get; private set; }
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
     public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0]; // 4032x3024
-    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
+    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => this.supportedPhotoResolutions;
     public float MinExposureCompensation { get; private set; }
     public float MaxExposureCompensation { get; private set; }
     public float ExposureCompensation { get; private set; }
@@ -58,13 +64,13 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
 
     public Task<bool> CheckPermissionAsync()
     {
-        var status = AVCaptureDevice.GetAuthorizationStatus(AVMediaTypes.Video);
+        var status = AVCaptureDevice.GetAuthorizationStatus(AVAuthorizationMediaType.Video);
         return Task.FromResult(status == AVAuthorizationStatus.Authorized);
     }
 
     public async Task<bool> RequestPermissionAsync()
     {
-        return await AVCaptureDevice.RequestAccessForMediaTypeAsync(AVMediaTypes.Video);
+        return await AVCaptureDevice.RequestAccessForMediaTypeAsync(AVAuthorizationMediaType.Video);
     }
 
     // ========== ICameraProvider ==========
@@ -134,26 +140,76 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         return Task.CompletedTask;
     }
 
-    public Task TakePhotoAsync()
+    public async Task TakePhotoAsync()
     {
-        if (this.photoOutput == null)
+        if (this.photoOutput == null || this.captureDevice == null)
             throw new InvalidOperationException("Camera preview not started.");
 
-        var settings = AVCapturePhotoSettings.Create();
-        settings.FlashMode = this.FlashMode switch
+        AVCaptureDeviceFormat? previewFormat = null;
+        var captureResolution = this.PhotoResolution;
+
+        using (await this.updateCameraLock.LockAsync())
         {
-            FlashMode.Off => AVCaptureFlashMode.Off,
-            FlashMode.On => AVCaptureFlashMode.On,
-            FlashMode.Auto => AVCaptureFlashMode.Auto,
-            _ => AVCaptureFlashMode.Auto
-        };
-        var delegateHandler = new PhotoCaptureDelegate(
-            data => this.PhotoCaptured?.Invoke(this, data.ToArray()),
-            error => this.ErrorOccurred?.Invoke(this, error));
+            if (this.photoOutput == null || this.captureDevice == null)
+                throw new InvalidOperationException("Camera preview not started.");
 
-        this.photoOutput.CapturePhoto(settings, delegateHandler);
+            previewFormat = this.captureDevice.ActiveFormat;
 
-        return Task.CompletedTask;
+            if (OperatingSystem.IsIOSVersionAtLeast(16))
+            {
+                var captureTarget = this.GetBestCaptureFormatAndResolutionForPhoto(this.PhotoResolution);
+                captureResolution = captureTarget.Resolution;
+
+                if (captureTarget.Format != null && !ReferenceEquals(this.captureDevice.ActiveFormat, captureTarget.Format))
+                {
+                    this.ApplyCaptureFormat(captureTarget.Format);
+                }
+
+                this.photoOutput.MaxPhotoDimensions = new CMVideoDimensions(captureResolution.Width, captureResolution.Height);
+            }
+
+            var settings = AVCapturePhotoSettings.Create();
+            settings.FlashMode = this.FlashMode switch
+            {
+                FlashMode.Off => AVCaptureFlashMode.Off,
+                FlashMode.On => AVCaptureFlashMode.On,
+                FlashMode.Auto => AVCaptureFlashMode.Auto,
+                _ => AVCaptureFlashMode.Auto
+            };
+            if (OperatingSystem.IsIOSVersionAtLeast(16))
+            {
+                settings.MaxPhotoDimensions = new CMVideoDimensions(captureResolution.Width, captureResolution.Height);
+                settings.PhotoQualityPrioritization = GetPhotoQualityPrioritization(captureResolution);
+            }
+
+            currentPhotoDelegate?.Dispose();
+            currentPhotoDelegate = new PhotoCaptureDelegate(
+                data =>
+                {
+                    currentPhotoDelegate = null;
+                    _ = this.RestorePreviewFormatAfterCaptureAsync(previewFormat);
+                    var rotated = RotatePhotoData(data, this._rotationAngle);
+                    UIKit.UIApplication.SharedApplication.InvokeOnMainThread(() =>
+                        this.PhotoCaptured?.Invoke(this, rotated));
+                },
+                error =>
+                {
+                    currentPhotoDelegate = null;
+                    _ = this.RestorePreviewFormatAfterCaptureAsync(previewFormat);
+                    this.ErrorOccurred?.Invoke(this, error);
+                });
+
+            try
+            {
+                this.photoOutput.CapturePhoto(settings, currentPhotoDelegate);
+            }
+            catch (Exception ex)
+            {
+                this.ErrorOccurred?.Invoke(this, $"CapturePhoto failed: {ex.Message}");
+                currentPhotoDelegate = null;
+                _ = this.RestorePreviewFormatAfterCaptureAsync(previewFormat);
+            }
+        }
     }
 
     public async Task SwitchCameraAsync(CameraFacing facing)
@@ -238,6 +294,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             this.captureDevice.LockForConfiguration(out _);
             try
             {
+                this.torchOn = on;
                 this.captureDevice.TorchMode = on
                     ? AVCaptureTorchMode.On
                     : AVCaptureTorchMode.Off;
@@ -317,14 +374,12 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         this.session.BeginConfiguration();
         try
         {
-            // Remove old input
             if (this.captureInput != null && this.session.Inputs.Contains(this.captureInput))
             {
                 this.session.RemoveInput(this.captureInput);
                 this.captureInput.Dispose();
             }
 
-            // Find camera device
             var position = this.currentFacing == CameraFacing.Back
                 ? AVCaptureDevicePosition.Back
                 : AVCaptureDevicePosition.Front;
@@ -344,26 +399,28 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             if (this.session.CanAddInput(this.captureInput))
                 this.session.AddInput(this.captureInput);
 
-            // Add video data output
             if (!this.session.Outputs.Contains(this.videoDataOutput) &&
                 this.session.CanAddOutput(this.videoDataOutput))
-            {
                 this.session.AddOutput(this.videoDataOutput);
-            }
 
-            // Add photo output
             if (!this.session.Outputs.Contains(this.photoOutput) &&
                 this.session.CanAddOutput(this.photoOutput))
-            {
                 this.session.AddOutput(this.photoOutput);
-            }
 
-            this.session.SessionPreset = MapResolutionToPreset(this.PhotoResolution);
+            this.session.SessionPreset = GetPreviewSessionPreset(this.PhotoResolution);
         }
         finally
         {
             this.session.CommitConfiguration();
         }
+
+        // 注册设备方向变化通知 → 通知 FrameAnalyzer 旋转角度
+        UIDevice.Notifications.ObserveOrientationDidChange((_, _) =>
+        {
+            this.frameAnalyzer?.SetDeviceOrientation(UIDevice.CurrentDevice.Orientation);
+        });
+        // 初始设置
+        this.frameAnalyzer?.SetDeviceOrientation(UIDevice.CurrentDevice.Orientation);
 
         return Task.CompletedTask;
     }
@@ -376,10 +433,9 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         this.frameAnalyzer?.Dispose();
         this.frameAnalyzer = null;
 
-        this.frameAnalyzer = new FrameAnalyzer(frame =>
-        {
-            this.FrameReceived?.Invoke(this, frame);
-        });
+        this.frameAnalyzer = new FrameAnalyzer(
+            frame => this.FrameReceived?.Invoke(this, frame),
+            angle => this._rotationAngle = angle);
 
         this.videoDataOutput.SetSampleBufferDelegate(
             this.frameAnalyzer,
@@ -399,7 +455,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
 
         // KVO 监听缩放倍率变化（与 Android ZoomObserver 行为一致）
         this.zoomObserver?.Dispose();
-        this.zoomObserver = this.captureDevice.AddObserver(
+        this.zoomObserver = (NSObject)this.captureDevice.AddObserver(
             "videoZoomFactor",
             NSKeyValueObservingOptions.New,
             _ =>
@@ -409,21 +465,202 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             });
     }
 
-    /// <summary>将 PhotoResolution 映射到 AVCaptureSession.Preset</summary>
-    private static AVCaptureSession.Preset MapResolutionToPreset(PhotoResolution resolution)
+    private void UpdateSupportedPhotoResolutions()
     {
+        if (this.captureDevice == null)
+        {
+            this.supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
+            return;
+        }
+
+        List<PhotoResolution> resolutions = [];
+
+        if (OperatingSystem.IsIOSVersionAtLeast(16))
+            resolutions = this.EnumerateSupportedPhotoResolutionsAcrossAllFormatsiOS16();
+
+        this.supportedPhotoResolutions = resolutions.Count > 0
+            ? resolutions
+            : [.. PhotoResolution.DefaultPresets];
+    }
+
+    private PhotoResolution GetBestSupportedPhotoResolution(PhotoResolution preferred)
+    {
+        if (this.supportedPhotoResolutions.Count == 0)
+            return preferred;
+
+        var exact = this.supportedPhotoResolutions.FirstOrDefault(r =>
+            r.Width == preferred.Width && r.Height == preferred.Height);
+        if (exact != null)
+            return exact;
+
+        var preferredPixels = preferred.Width * preferred.Height;
+        return this.supportedPhotoResolutions
+            .OrderBy(resolution => Math.Abs((resolution.Width * resolution.Height) - preferredPixels))
+            .ThenBy(resolution => Math.Abs(((double)resolution.Width / resolution.Height) - preferred.AspectRatio))
+            .First();
+    }
+
+    private static string CreatePhotoResolutionLabel(int width, int height)
+    {
+        var ratio = (double)width / height;
+        var megapixels = width * height / 1_000_000d;
+        var ratioLabel = Math.Abs(ratio - 4d / 3d) < 0.03 ? "4:3"
+            : Math.Abs(ratio - 16d / 9d) < 0.03 ? "16:9"
+            : Math.Abs(ratio - 1d) < 0.03 ? "1:1"
+            : $"{ratio:F2}:1";
+
+        return $"{ratioLabel} {megapixels:F1}MP";
+    }
+
+    [SupportedOSPlatform("ios16.0")]
+    private List<PhotoResolution> EnumerateSupportedPhotoResolutionsAcrossAllFormatsiOS16()
+    {
+        if (this.captureDevice == null)
+            return [];
+
+        return this.captureDevice.Formats
+            .SelectMany(format => format.SupportedMaxPhotoDimensions ?? [])
+            .Where(dim => dim.Width > 0 && dim.Height > 0)
+            .Select(dim => new PhotoResolution(dim.Width, dim.Height, CreatePhotoResolutionLabel(dim.Width, dim.Height)))
+            .DistinctBy(resolution => (resolution.Width, resolution.Height))
+            .OrderByDescending(resolution => resolution.Width * resolution.Height)
+            .ThenByDescending(resolution => resolution.Width)
+            .ToList();
+    }
+
+    [SupportedOSPlatform("ios16.0")]
+    private (AVCaptureDeviceFormat? Format, PhotoResolution Resolution) GetBestCaptureFormatAndResolutionForPhoto(PhotoResolution preferred)
+    {
+        if (this.captureDevice == null)
+            return (null, preferred);
+
+        var candidates = this.captureDevice.Formats
+            .SelectMany(format => (format.SupportedMaxPhotoDimensions ?? [])
+                .Where(dim => dim.Width > 0 && dim.Height > 0)
+                .Select(dim => new
+                {
+                    Format = format,
+                    Resolution = new PhotoResolution(dim.Width, dim.Height, CreatePhotoResolutionLabel(dim.Width, dim.Height))
+                }))
+            .ToList();
+
+        if (candidates.Count == 0)
+            return (this.captureDevice.ActiveFormat, this.GetBestSupportedPhotoResolution(preferred));
+
+        var preferredPixels = preferred.Width * preferred.Height;
+        var best = candidates
+            .OrderBy(candidate => candidate.Resolution.Width == preferred.Width && candidate.Resolution.Height == preferred.Height ? 0 : 1)
+            .ThenBy(candidate => Math.Abs((candidate.Resolution.Width * candidate.Resolution.Height) - preferredPixels))
+            .ThenBy(candidate => Math.Abs(candidate.Resolution.AspectRatio - preferred.AspectRatio))
+            .ThenBy(candidate => ReferenceEquals(candidate.Format, this.captureDevice.ActiveFormat) ? 0 : 1)
+            .First();
+
+        return (best.Format, best.Resolution);
+    }
+
+    private void ApplyCaptureFormat(AVCaptureDeviceFormat format)
+    {
+        if (this.captureDevice == null || ReferenceEquals(this.captureDevice.ActiveFormat, format))
+            return;
+
+        this.captureDevice.LockForConfiguration(out _);
+        try
+        {
+            this.captureDevice.ActiveFormat = format;
+
+            var clampedZoom = Math.Clamp(this.CurrentZoomFactor ?? 1f,
+                (float)this.captureDevice.MinAvailableVideoZoomFactor,
+                (float)this.captureDevice.MaxAvailableVideoZoomFactor);
+            this.captureDevice.VideoZoomFactor = clampedZoom;
+            this.CurrentZoomFactor = clampedZoom;
+
+            var clampedExposure = Math.Clamp(this.ExposureCompensation,
+                this.captureDevice.MinExposureTargetBias,
+                this.captureDevice.MaxExposureTargetBias);
+            this.captureDevice.SetExposureTargetBias(clampedExposure, null);
+            this.ExposureCompensation = clampedExposure;
+
+            if (this.captureDevice.HasTorch)
+            {
+                this.captureDevice.TorchMode = this.torchOn ? AVCaptureTorchMode.On : AVCaptureTorchMode.Off;
+            }
+        }
+        finally
+        {
+            this.captureDevice.UnlockForConfiguration();
+        }
+    }
+
+    private async Task RestorePreviewFormatAfterCaptureAsync(AVCaptureDeviceFormat? previewFormat)
+    {
+        if (!OperatingSystem.IsIOSVersionAtLeast(16) || previewFormat == null)
+            return;
+
+        try
+        {
+            using (await this.updateCameraLock.LockAsync())
+            {
+                if (this.captureDevice == null || ReferenceEquals(this.captureDevice.ActiveFormat, previewFormat))
+                    return;
+
+                this.ApplyCaptureFormat(previewFormat);
+            }
+        }
+        catch (Exception ex)
+        {
+            this.ErrorOccurred?.Invoke(this, $"Restore preview format failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>将 PhotoResolution 映射到 AVCaptureSessionPreset 字符串常量</summary>
+    private static NSString GetPreviewSessionPreset(PhotoResolution resolution)
+    {
+        // 预览会话只使用视频稳定可用的 preset，超高像素仍通过拍照阶段的 format + MaxPhotoDimensions 生效
         return (resolution.Width, resolution.Height) switch
         {
-            (3840, 2160) => AVCaptureSession.Preset3840x2160,
-            (1920, 1080) => AVCaptureSession.Preset1920x1080,
-            (1280, 720)  => AVCaptureSession.Preset1280x720,
-            (640, 480)   => AVCaptureSession.Preset640x480,
-            (352, 288)   => AVCaptureSession.Preset352x288,
-            (960, 540)   => AVCaptureSession.PresetiFrame960x540,
-            // 高于 Full HD 的用 High 品质，其余默认 720p
-            _ when resolution.Width * resolution.Height > 1920 * 1080 => AVCaptureSession.PresetHigh,
-            _ => AVCaptureSession.Preset1280x720,
+            (3840, 2160) => (NSString)"AVCaptureSessionPreset3840x2160",
+            (1920, 1080) => (NSString)"AVCaptureSessionPreset1920x1080",
+            (1280, 720)  => (NSString)"AVCaptureSessionPreset1280x720",
+            (640, 480)   => (NSString)"AVCaptureSessionPreset640x480",
+            (352, 288)   => (NSString)"AVCaptureSessionPreset352x288",
+            (960, 540)   => (NSString)"AVCaptureSessionPresetiFrame960x540",
+            _ when resolution.Width * resolution.Height > 1920 * 1080 => (NSString)"AVCaptureSessionPresetHigh",
+            _ => (NSString)"AVCaptureSessionPreset1280x720",
         };
+    }
+
+    [SupportedOSPlatform("ios16.0")]
+    private static AVCapturePhotoQualityPrioritization GetPhotoQualityPrioritization(PhotoResolution resolution)
+    {
+        return resolution.Width * resolution.Height >= 4032 * 3024
+            ? AVCapturePhotoQualityPrioritization.Quality
+            : AVCapturePhotoQualityPrioritization.Balanced;
+    }
+
+    /// <summary>将照片数据按角度旋转像素后输出。不旋转时直接透传原始数据（零质量损失）。</summary>
+    private static byte[] RotatePhotoData(NSData data, int angle)
+    {
+        if (angle == 0) return data.ToArray();
+
+        using var ms = new System.IO.MemoryStream(data.ToArray());
+        using var original = SKBitmap.Decode(ms);
+        if (original == null) return data.ToArray();
+
+        bool swap = angle == 90 || angle == 270;
+        int w = swap ? original.Height : original.Width;
+        int h = swap ? original.Width : original.Height;
+
+        using var rotated = new SKBitmap(w, h, original.ColorType, original.AlphaType);
+        using var canvas = new SKCanvas(rotated);
+        canvas.Translate(w / 2f, h / 2f);
+        canvas.RotateDegrees(angle);
+        canvas.Translate(-original.Width / 2f, -original.Height / 2f);
+        canvas.DrawBitmap(original, 0, 0);
+
+        // 用 JPEG 最高质量编码，只纠正方向不损失画质
+        using var img = SKImage.FromBitmap(rotated);
+        using var encData = img.Encode(SKEncodedImageFormat.Jpeg, 100);
+        return encData.ToArray();
     }
 
     private class PhotoCaptureDelegate : AVCapturePhotoCaptureDelegate
@@ -448,9 +685,11 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                 return;
             }
 
-            var data = photo.FileDataRepresentation;
-            if (data != null)
+            if (photo.FileDataRepresentation is { } data)
                 this.onComplete(data);
+            else
+                this.onError("Photo data is null (DidFinishProcessingPhoto called but FileDataRepresentation null)");
         }
+
     }
 }

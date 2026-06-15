@@ -20,7 +20,7 @@
                         x:Name="PART_PreviewImage"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Stretch="UniformToFill" />
+                        Stretch="Uniform" />
 
                     <!--  Layer 2: Focus indicator  -->
                     <Canvas x:Name="PART_FocusCanvas" IsHitTestVisible="False">

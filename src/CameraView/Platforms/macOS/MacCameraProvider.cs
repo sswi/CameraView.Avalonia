@@ -2,6 +2,7 @@
 using AVFoundation;
 using CoreMedia;
 using CoreVideo;
+using System.Runtime.Versioning;
 using CameraView.Models;
 using CameraView.Services;
 using CameraView.Utils;
@@ -17,6 +18,7 @@ namespace CameraView.Platforms.macOS;
 internal class MacCameraProvider : ICameraProvider, ICameraPermissions
 {
     private readonly AsyncLock updateCameraLock = new();
+    private List<PhotoResolution> supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
 
     private AVCaptureSession? session;
     private AVCaptureDevice? captureDevice;
@@ -39,7 +41,7 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
     public float? CurrentZoomFactor { get; private set; }
     public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
     public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0];
-    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => PhotoResolution.DefaultPresets;
+    public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => this.supportedPhotoResolutions;
     public float MinExposureCompensation { get; private set; }
     public float MaxExposureCompensation { get; private set; }
     public float ExposureCompensation { get; private set; }
@@ -157,6 +159,8 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
             FlashMode.Auto => AVCaptureFlashMode.Auto,
             _ => AVCaptureFlashMode.Auto
         };
+        if (OperatingSystem.IsMacOSVersionAtLeast(13))
+            settings.MaxPhotoDimensions = new CMVideoDimensions(this.PhotoResolution.Width, this.PhotoResolution.Height);
         var delegateHandler = new PhotoCaptureDelegate(
             data => this.PhotoCaptured?.Invoke(this, data.ToArray()),
             error => this.ErrorOccurred?.Invoke(this, error));
@@ -216,7 +220,13 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
 
     public Task SetPhotoResolutionAsync(PhotoResolution resolution)
     {
-        this.PhotoResolution = resolution;
+        this.PhotoResolution = this.GetBestSupportedPhotoResolution(resolution);
+
+        if (this.session?.Running == true)
+        {
+            return this.RestartPreviewAsync();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -285,7 +295,11 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
                 this.session.AddOutput(this.photoOutput);
             }
 
+            this.UpdateSupportedPhotoResolutions();
+            this.PhotoResolution = this.GetBestSupportedPhotoResolution(this.PhotoResolution);
             this.session.SessionPreset = MapResolutionToPreset(this.PhotoResolution);
+            if (OperatingSystem.IsMacOSVersionAtLeast(13))
+                this.photoOutput.MaxPhotoDimensions = new CMVideoDimensions(this.PhotoResolution.Width, this.PhotoResolution.Height);
         }
         finally
         {
@@ -334,6 +348,75 @@ internal class MacCameraProvider : ICameraProvider, ICameraPermissions
                 if (this.captureDevice != null)
                     this.CurrentZoomFactor = MathF.Round((float)this.captureDevice.VideoZoomFactor, 1);
             });
+    }
+
+    private void UpdateSupportedPhotoResolutions()
+    {
+        if (this.captureDevice == null)
+        {
+            this.supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
+            return;
+        }
+
+        List<PhotoResolution> resolutions = [];
+
+        if (OperatingSystem.IsMacOSVersionAtLeast(13))
+            resolutions = this.EnumerateSupportedPhotoResolutionsMacOS13();
+
+        this.supportedPhotoResolutions = resolutions.Count > 0
+            ? resolutions
+            : [.. PhotoResolution.DefaultPresets];
+    }
+
+    private PhotoResolution GetBestSupportedPhotoResolution(PhotoResolution preferred)
+    {
+        if (this.supportedPhotoResolutions.Count == 0)
+            return preferred;
+
+        var exact = this.supportedPhotoResolutions.FirstOrDefault(r =>
+            r.Width == preferred.Width && r.Height == preferred.Height);
+        if (exact != null)
+            return exact;
+
+        var preferredPixels = preferred.Width * preferred.Height;
+        return this.supportedPhotoResolutions
+            .OrderBy(resolution => Math.Abs((resolution.Width * resolution.Height) - preferredPixels))
+            .ThenBy(resolution => Math.Abs(((double)resolution.Width / resolution.Height) - preferred.AspectRatio))
+            .First();
+    }
+
+    [SupportedOSPlatform("macos13.0")]
+    private List<PhotoResolution> EnumerateSupportedPhotoResolutionsMacOS13()
+    {
+        if (this.captureDevice == null)
+            return [];
+
+        return this.captureDevice.Formats
+            .SelectMany(format => format.SupportedMaxPhotoDimensions ?? [])
+            .Where(dim => dim.Width > 0 && dim.Height > 0)
+            .Select(dim => new PhotoResolution(dim.Width, dim.Height, CreatePhotoResolutionLabel(dim.Width, dim.Height)))
+            .DistinctBy(resolution => (resolution.Width, resolution.Height))
+            .OrderByDescending(resolution => resolution.Width * resolution.Height)
+            .ThenByDescending(resolution => resolution.Width)
+            .ToList();
+    }
+
+    private static string CreatePhotoResolutionLabel(int width, int height)
+    {
+        var ratio = (double)width / height;
+        var megapixels = width * height / 1_000_000d;
+        var ratioLabel = Math.Abs(ratio - 4d / 3d) < 0.03 ? "4:3"
+            : Math.Abs(ratio - 16d / 9d) < 0.03 ? "16:9"
+            : Math.Abs(ratio - 1d) < 0.03 ? "1:1"
+            : $"{ratio:F2}:1";
+
+        return $"{ratioLabel} {megapixels:F1}MP";
+    }
+
+    private async Task RestartPreviewAsync()
+    {
+        await StopPreviewAsync();
+        await StartPreviewAsync();
     }
 
     private static AVCaptureSession.Preset MapResolutionToPreset(PhotoResolution resolution)

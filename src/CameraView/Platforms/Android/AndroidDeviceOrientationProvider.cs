@@ -38,9 +38,9 @@ public class AndroidDeviceOrientationProvider : Java.Lang.Object, ISensorEventLi
         this.sensorManager?.UnregisterListener(this);
     }
 
-    public void OnSensorChanged(SensorEvent e)
+    public void OnSensorChanged(SensorEvent? e)
     {
-        if (e.Sensor?.Type != SensorType.RotationVector) return;
+        if (e?.Sensor?.Type != SensorType.RotationVector) return;
         if (e.Values == null || e.Values.Count < 4) return;
 
         try

@@ -149,6 +149,11 @@ public class CameraViewControl : TemplatedControl
             DeviceOrientationState.PortraitUpright, defaultBindingMode: BindingMode.OneWayToSource);
     public DeviceOrientationState OrientationState { get => GetValue(OrientationStateProperty); private set => SetValue(OrientationStateProperty, value); }
 
+    /// <summary>预览帧宽高比（自动从帧尺寸计算，用于 UI 约束预览比例）</summary>
+    public static readonly StyledProperty<double> PreviewAspectRatioProperty =
+        AvaloniaProperty.Register<CameraViewControl, double>(nameof(PreviewAspectRatio), 4.0 / 3);
+    public double PreviewAspectRatio { get => GetValue(PreviewAspectRatioProperty); private set => SetValue(PreviewAspectRatioProperty, value); }
+
     // ========================================================================
     //  事件
     // ========================================================================
@@ -275,10 +280,13 @@ public class CameraViewControl : TemplatedControl
         frameProcessor?.ProcessPreviewFrame(frame);
     }
 
-    /// <summary>FrameProcessor 处理好帧 → 更新 UI</summary>
+    /// <summary>FrameProcessor 处理好帧 → 更新 UI，同时同步预览比例</summary>
     private void OnFrameReady(Bitmap bitmap)
     {
         previewImage?.Source = bitmap;
+        // 帧比例变化时通知模板更新容器尺寸
+        var ratio = (double)bitmap.PixelSize.Width / bitmap.PixelSize.Height;
+        SetCurrentValue(PreviewAspectRatioProperty, ratio);
     }
 
     /// <summary>FPS 更新 → 仅 DebugMode 时显示</summary>
@@ -307,12 +315,15 @@ public class CameraViewControl : TemplatedControl
 
         if (error.Contains("Photo", StringComparison.OrdinalIgnoreCase))
         {
-            IsBusying = false;
-            SetValue(IsCapturingNextFrameProperty, false);
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsBusying = false;
+                SetValue(IsCapturingNextFrameProperty, false);
 
-            var result = new PhotoCaptureResult(false, null, error);
-            var cmd = PhotoCapturedCommand;
-            if (cmd?.CanExecute(result) == true) cmd.Execute(result);
+                var result = new PhotoCaptureResult(false, null, error);
+                var cmd = PhotoCapturedCommand;
+                if (cmd?.CanExecute(result) == true) cmd.Execute(result);
+            });
         }
     }
 

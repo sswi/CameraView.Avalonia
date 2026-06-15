@@ -19,15 +19,15 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
 
     public int TargetCoordinateSystem => ImageAnalysis.CoordinateSystemOriginal;
 
-    public void Analyze(IImageProxy proxy)
+    public void Analyze(IImageProxy? proxy)
     {
         try
         {
             // Process every frame for smooth preview
-            var image = proxy.Image;
+            var image = proxy?.Image;
             if (image == null) return;
 
-            int rotationDegrees = proxy.ImageInfo?.RotationDegrees ?? 0;
+            int rotationDegrees = proxy?.ImageInfo?.RotationDegrees ?? 0;
 
             var yuvPlanes = image.GetPlanes();
             if (yuvPlanes == null || yuvPlanes.Length < 3) return;
