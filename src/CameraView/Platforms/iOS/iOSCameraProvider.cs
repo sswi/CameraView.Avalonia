@@ -52,9 +52,17 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         // 找到支持目标分辨率的 format 并切过去 + 设 MaxPhotoDimensions
         if (this.captureDevice != null && this.photoOutput != null && OperatingSystem.IsIOSVersionAtLeast(16))
         {
+            // 从支持目标分辨率的 format 中选预览质量最好的（Dimensions 最大）
             var target = this.captureDevice.Formats
-                .Select(f => new { Format = f, Max = (f.SupportedMaxPhotoDimensions ?? []).FirstOrDefault(d => d.Width == resolution.Width && d.Height == resolution.Height) })
-                .FirstOrDefault(x => x.Max.Width > 0);
+                .Select(f => new
+                {
+                    Format = f,
+                    Max = (f.SupportedMaxPhotoDimensions ?? []).FirstOrDefault(d => d.Width == resolution.Width && d.Height == resolution.Height),
+                    PreviewPixels = (long)((CMVideoFormatDescription)f.FormatDescription).Dimensions.Width * ((CMVideoFormatDescription)f.FormatDescription).Dimensions.Height,
+                })
+                .Where(x => x.Max.Width > 0)
+                .OrderByDescending(x => x.PreviewPixels)
+                .FirstOrDefault();
 
             if (target != null && !ReferenceEquals(this.captureDevice.ActiveFormat, target.Format))
             {
