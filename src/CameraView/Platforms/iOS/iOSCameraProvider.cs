@@ -718,27 +718,36 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             : AVCapturePhotoQualityPrioritization.Balanced;
     }
 
-    /// <summary>将照片数据按角度旋转像素后输出。不旋转时直接透传原始数据（零质量损失）。</summary>
+    /// <summary>
+    /// 将 AVFoundation 输出的照片按当前设备朝向旋转像素，输出无 EXIF 朝向的 JPEG。
+    /// 从 FrameAnalyzer 同步的 _rotationAngle 决定旋转角度（Portrait=90, LandscapeLeft=0, LandscapeRight=180）。
+    /// 使用 SkiaSharp SKCodec 解码原始像素（跳过 JPEG 内置的 EXIF 朝向），避免双重旋转。
+    /// </summary>
     private static byte[] RotatePhotoData(NSData data, int angle)
     {
         if (angle == 0) return data.ToArray();
 
-        using var ms = new System.IO.MemoryStream(data.ToArray());
-        using var original = SKBitmap.Decode(ms);
-        if (original == null) return data.ToArray();
+        // 通过 SKCodec 解码原始像素（不应用 EXIF 朝向）
+        using var codec = SKCodec.Create(new System.IO.MemoryStream(data.ToArray()));
+        if (codec == null) return data.ToArray();
+
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height);
+        using var original = new SKBitmap(info);
+        if (codec.GetPixels(info, original.GetPixels()) != SKCodecResult.Success)
+            return data.ToArray();
 
         bool swap = angle == 90 || angle == 270;
-        int w = swap ? original.Height : original.Width;
-        int h = swap ? original.Width : original.Height;
+        int w = swap ? info.Height : info.Width;
+        int h = swap ? info.Width : info.Height;
 
         using var rotated = new SKBitmap(w, h, original.ColorType, original.AlphaType);
         using var canvas = new SKCanvas(rotated);
         canvas.Translate(w / 2f, h / 2f);
         canvas.RotateDegrees(angle);
-        canvas.Translate(-original.Width / 2f, -original.Height / 2f);
+        canvas.Translate(-info.Width / 2f, -info.Height / 2f);
         canvas.DrawBitmap(original, 0, 0);
 
-        // 用 JPEG 最高质量编码，只纠正方向不损失画质
+        // 重新编码为 JPEG，无 EXIF 朝向（像素已正）
         using var img = SKImage.FromBitmap(rotated);
         using var encData = img.Encode(SKEncodedImageFormat.Jpeg, 100);
         return encData.ToArray();
