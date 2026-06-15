@@ -719,35 +719,28 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     }
 
     /// <summary>
-    /// 将 AVFoundation 输出的照片按当前设备朝向旋转像素，输出无 EXIF 朝向的 JPEG。
-    /// 从 FrameAnalyzer 同步的 _rotationAngle 决定旋转角度（Portrait=90, LandscapeLeft=0, LandscapeRight=180）。
-    /// 使用 SkiaSharp SKCodec 解码原始像素（跳过 JPEG 内置的 EXIF 朝向），避免双重旋转。
+    /// 将照片数据按当前设备朝向旋转像素后输出。
+    /// SKBitmap.Decode 自动应用 JPEG 内置的 AVFoundation 朝向标记得到正像素，
+    /// 然后按 _rotationAngle（来自 FrameAnalyzer 的控件朝向）额外旋转。
+    /// LandscapeRight 和 PortraitUpsideDown 需要 180° 翻转。
     /// </summary>
     private static byte[] RotatePhotoData(NSData data, int angle)
     {
-        if (angle == 0) return data.ToArray();
+        // 只有 LandscapeRight(180) 和 PortraitUpsideDown(180) 需要旋转
+        // Portrait(90) 和 LandscapeLeft(0)：SKBitmap.Decode 已经通过 EXIF 摆正
+        if (angle == 0 || angle == 90) return data.ToArray();
 
-        // 通过 SKCodec 解码原始像素（不应用 EXIF 朝向）
-        using var codec = SKCodec.Create(new System.IO.MemoryStream(data.ToArray()));
-        if (codec == null) return data.ToArray();
+        using var ms = new System.IO.MemoryStream(data.ToArray());
+        using var original = SKBitmap.Decode(ms);
+        if (original == null) return data.ToArray();
 
-        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height);
-        using var original = new SKBitmap(info);
-        if (codec.GetPixels(info, original.GetPixels()) != SKCodecResult.Success)
-            return data.ToArray();
-
-        bool swap = angle == 90 || angle == 270;
-        int w = swap ? info.Height : info.Width;
-        int h = swap ? info.Width : info.Height;
-
-        using var rotated = new SKBitmap(w, h, original.ColorType, original.AlphaType);
+        using var rotated = new SKBitmap(original.Width, original.Height, original.ColorType, original.AlphaType);
         using var canvas = new SKCanvas(rotated);
-        canvas.Translate(w / 2f, h / 2f);
+        canvas.Translate(original.Width / 2f, original.Height / 2f);
         canvas.RotateDegrees(angle);
-        canvas.Translate(-info.Width / 2f, -info.Height / 2f);
+        canvas.Translate(-original.Width / 2f, -original.Height / 2f);
         canvas.DrawBitmap(original, 0, 0);
 
-        // 重新编码为 JPEG，无 EXIF 朝向（像素已正）
         using var img = SKImage.FromBitmap(rotated);
         using var encData = img.Encode(SKEncodedImageFormat.Jpeg, 100);
         return encData.ToArray();
