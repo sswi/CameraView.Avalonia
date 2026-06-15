@@ -181,6 +181,14 @@ public partial class MainViewModel : ViewModelBase
         this.MinZoom = this.cameraProvider.MinZoomFactor ?? 1f;
         this.MaxZoom = this.cameraProvider.MaxZoomFactor ?? 5f;
         this.ZoomValue = this.cameraProvider.CurrentZoomFactor ?? 1f;
+
+        // 切换后刷新分辨率列表（前后摄像头支持的分辨率不同）
+        this.Resolutions.Clear();
+        foreach (var r in this.CameraControl.SupportedResolutions)
+            this.Resolutions.Add(r);
+        this.SelectedResolution = this.Resolutions.FirstOrDefault();
+        if (this.SelectedResolution != null)
+            this.CameraControl.PhotoResolution = this.SelectedResolution;
     }
 
     [RelayCommand]
@@ -209,15 +217,21 @@ public partial class MainViewModel : ViewModelBase
 
         if (result.IsSuccess && result.ImageData != null)
         {
-            // 保存到应用文档目录（所有平台通用）
-            var dir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            var path = System.IO.Path.Combine(dir, $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
-            System.IO.File.WriteAllBytes(path, result.ImageData);
-            this.StatusText = $"照片已保存: {result.ImageData.Length / 1024} KB";
+            this.StatusText = $"照片已拍摄: {result.ImageData.Length / 1024} KB";
+
+            // 仅保存到相册（不再同时保存到文件系统，避免重复）
             if (PhotoAlbumSaverRegistry.Current != null)
             {
                 this.StatusText = $"照片已拍摄: {result.ImageData.Length / 1024} KB，正在写入相册…";
                 _ = this.SavePhotoToAlbumAsync(result.ImageData);
+            }
+            else
+            {
+                // 无相册保存器时才保存到文件系统
+                var dir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                var path = System.IO.Path.Combine(dir, $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
+                System.IO.File.WriteAllBytes(path, result.ImageData);
+                this.StatusText = $"照片已保存: {result.ImageData.Length / 1024} KB";
             }
         }
         else

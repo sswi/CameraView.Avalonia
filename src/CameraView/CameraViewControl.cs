@@ -266,6 +266,8 @@ public class CameraViewControl : TemplatedControl
             IsBusying = true;
             var newFacing = cameraProvider.CurrentFacing == CameraFacing.Back ? CameraFacing.Front : CameraFacing.Back;
             await cameraProvider.SwitchCameraAsync(newFacing);
+            // 同步 CameraFacing 属性，避免 UI 状态与实际不一致
+            SetCurrentValue(CameraFacingProperty, cameraProvider.CurrentFacing);
             IsBusying = false;
         }
     }
