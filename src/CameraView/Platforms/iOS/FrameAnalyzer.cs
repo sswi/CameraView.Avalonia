@@ -50,13 +50,17 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             _rotationAngle = orientation switch
             {
                 UIDeviceOrientation.Portrait => 90,
-                UIDeviceOrientation.LandscapeLeft => 0,
-                UIDeviceOrientation.LandscapeRight => 180,
+                UIDeviceOrientation.LandscapeLeft => 270,
+                UIDeviceOrientation.LandscapeRight => 0,
                 _ => 90,
             };
             this.onRotationChanged?.Invoke(_rotationAngle);
         }
-        // 倒立：不改变角度，也不通知
+        else
+        {
+            _rotationAngle = 180;
+            this.onRotationChanged?.Invoke(_rotationAngle);
+        }
     }
 
     public override void DidOutputSampleBuffer(
