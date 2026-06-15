@@ -1,4 +1,5 @@
 using AndroidX.Camera.Core;
+using System;
 
 namespace CameraView.Platforms.Android;
 

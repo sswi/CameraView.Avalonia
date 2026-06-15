@@ -20,20 +20,21 @@ public class MainActivity : AvaloniaMainActivity
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        // Register BEFORE base.OnCreate — Avalonia init triggers ViewModel→Create() immediately
+        var context = this.BaseContext;
+        var provider = new CameraView.Platforms.Android.AndroidCameraProvider(context);
+        CameraView.CameraProviderFactory.RegisterProvider(provider);
+        CameraView.CameraProviderFactory.RegisterOrientationFactory(
+            () => new CameraView.Platforms.Android.AndroidDeviceOrientationProvider(context));
+
+        // Register photo album saver
+        CameraView.Demo.Services.PhotoAlbumSaverRegistry.Current =
+            new CameraView.Demo.Android.Services.AndroidPhotoAlbumSaver(ContentResolver!);
+
         base.OnCreate(savedInstanceState);
 
-        // Register this Activity with the camera provider
+        // Activity injection AFTER provider is registered
         CameraView.CameraProviderFactory.SetAndroidActivity(this);
-
-        // Check and request camera permission on first launch
-        if (ContextCompat.CheckSelfPermission(this, global::Android.Manifest.Permission.Camera)
-            != Permission.Granted)
-        {
-            ActivityCompat.RequestPermissions(
-                this,
-                [global::Android.Manifest.Permission.Camera],
-                CameraPermissionRequestCode);
-        }
     }
 
     public override void OnRequestPermissionsResult(
@@ -41,16 +42,15 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
 
+        bool granted = grantResults.Length > 0 && grantResults[0] == Permission.Granted;
+
+        // Forward to the cached AndroidCameraProvider so it can resolve the pending TaskCompletionSource
+        CameraView.CameraProviderFactory.NotifyAndroidPermissionResult(granted);
+
         if (requestCode == CameraPermissionRequestCode)
         {
-            if (grantResults.Length > 0 && grantResults[0] == Permission.Granted)
-            {
-                System.Diagnostics.Debug.WriteLine("Camera permission granted");
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("Camera permission denied");
-            }
+            System.Diagnostics.Debug.WriteLine(
+                granted ? "Camera permission granted" : "Camera permission denied");
         }
     }
 }

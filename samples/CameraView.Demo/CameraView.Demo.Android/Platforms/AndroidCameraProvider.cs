@@ -1,6 +1,19 @@
-using System.Diagnostics;
-using Activity = Android.App.Activity;
+using Android;
+using Android.Content;
+using Android.Content.PM;
+using Android.Graphics;
+using Android.Hardware.Camera2;
+using Android.Hardware.Camera2.Params;
 using AndroidX.Camera.Core;
+using AndroidX.Core.App;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using Activity = Android.App.Activity;
+using CameraManager = Android.Hardware.Camera2.CameraManager;
+using StreamConfigurationMap = Android.Hardware.Camera2.Params.StreamConfigurationMap;
 
 namespace CameraView.Platforms.Android;
 
@@ -8,7 +21,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 {
     private readonly Context appContext;
     private Activity? currentActivity;
-    private List<PhotoResolution> supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
+    private TaskCompletionSource<bool>? pendingPermissionRequest;
 
     private ProcessCameraProvider? cameraProvider;
     private ImageCapture? imageCapture;
@@ -24,8 +37,10 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     public float? MinZoomFactor { get; private set; }
     public float? MaxZoomFactor { get; private set; }
     public float? CurrentZoomFactor { get; private set; }
-    public FlashMode FlashMode { get; private set; } = FlashMode.Auto;
-    public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0]; // 4032x3024
+    public CameraView.Models.FlashMode FlashMode { get; private set; } = CameraView.Models.FlashMode.Auto;
+    private List<PhotoResolution> supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
+
+    public PhotoResolution PhotoResolution { get; private set; } = PhotoResolution.DefaultPresets[0];
     public IReadOnlyList<PhotoResolution> SupportedPhotoResolutions => this.supportedPhotoResolutions;
     public float MinExposureCompensation { get; private set; }
     public float MaxExposureCompensation { get; private set; }
@@ -40,13 +55,11 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     public AndroidCameraProvider(Context context)
     {
         this.appContext = context.ApplicationContext ?? context;
-        this.UpdateSupportedPhotoResolutions();
     }
 
     public void SetActivity(object activity)
     {
         this.currentActivity = activity as Activity;
-        this.UpdateSupportedPhotoResolutions();
     }
 
     // --- ICameraPermissions ---
@@ -68,15 +81,28 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 
         try
         {
+            this.pendingPermissionRequest = new TaskCompletionSource<bool>();
             ActivityCompat.RequestPermissions(
                 this.currentActivity,
                 [Manifest.Permission.Camera],
-                0);
-            return false;
+                CameraPermissionRequestCode);
+            return await this.pendingPermissionRequest.Task;
         }
         catch
         {
+            this.pendingPermissionRequest = null;
             return false;
+        }
+    }
+
+    internal const int CameraPermissionRequestCode = 9527;
+
+    internal void NotifyPermissionResult(bool granted)
+    {
+        if (this.pendingPermissionRequest != null)
+        {
+            this.pendingPermissionRequest.TrySetResult(granted);
+            this.pendingPermissionRequest = null;
         }
     }
 
@@ -211,7 +237,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
                 {
                     try
                     {
-                        var bytes = File.ReadAllBytes(outputFile.AbsolutePath);
+                        var bytes = System.IO.File.ReadAllBytes(outputFile.AbsolutePath);
                         this.PhotoCaptured?.Invoke(this, bytes);
                     }
                     catch (Exception ex)
@@ -229,8 +255,6 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
         this.lensFacing = facing == CameraFacing.Back
             ? CameraSelector.LensFacingBack
             : CameraSelector.LensFacingFront;
-        this.UpdateSupportedPhotoResolutions();
-        this.PhotoResolution = this.GetBestSupportedPhotoResolution(this.PhotoResolution);
 
         if (this.cameraProvider != null)
         {
@@ -294,8 +318,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 
     public Task SetPhotoResolutionAsync(PhotoResolution resolution)
     {
-        this.UpdateSupportedPhotoResolutions();
-        this.PhotoResolution = this.GetBestSupportedPhotoResolution(resolution);
+        this.PhotoResolution = resolution;
 
         if (this.cameraProvider != null && this.IsInitialized)
         {
@@ -341,7 +364,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
         return Task.CompletedTask;
     }
 
-    public Task SetFlashModeAsync(FlashMode mode)
+    public Task SetFlashModeAsync(CameraView.Models.FlashMode mode)
     {
         this.FlashMode = mode;
 
@@ -352,9 +375,9 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
             {
                 this.imageCapture.FlashMode = mode switch
                 {
-                    FlashMode.Off => ImageCapture.FlashModeOff,
-                    FlashMode.On => ImageCapture.FlashModeOn,
-                    FlashMode.Auto => ImageCapture.FlashModeAuto,
+                    CameraView.Models.FlashMode.Off => ImageCapture.FlashModeOff,
+                    CameraView.Models.FlashMode.On => ImageCapture.FlashModeOn,
+                    CameraView.Models.  FlashMode.Auto => ImageCapture.FlashModeAuto,
                     _ => ImageCapture.FlashModeAuto
                 };
             }
@@ -369,7 +392,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
         {
             try
             {
-                this.camera.CameraControl.EnableTorch(mode == FlashMode.On);
+                this.camera.CameraControl.EnableTorch(mode == CameraView.Models.FlashMode.On);
             }
             catch { }
         }
@@ -383,28 +406,30 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
         this.cameraProvider?.Dispose();
     }
 
+    // ======== Resolution query (Camera2) ========
+
     private void UpdateSupportedPhotoResolutions()
     {
         try
         {
-            var cameraManager = this.appContext.GetSystemService(Context.CameraService) as global::Android.Hardware.Camera2.CameraManager;
-            var cameraId = this.ResolveCameraIdForCurrentFacing(cameraManager);
+            var cameraManager = this.appContext.GetSystemService(Context.CameraService) as CameraManager;
+            var cameraId = ResolveCameraIdForCurrentFacing(cameraManager);
             if (cameraManager == null || string.IsNullOrWhiteSpace(cameraId))
             {
                 this.supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];
                 return;
             }
-
+      
             var characteristics = cameraManager.GetCameraCharacteristics(cameraId);
-            var map = characteristics?.Get(global::Android.Hardware.Camera2.CameraCharacteristics.ScalerStreamConfigurationMap)
-                as global::Android.Hardware.Camera2.Params.StreamConfigurationMap;
-            var sizes = map?.GetOutputSizes((int)global::Android.Graphics.ImageFormatType.Jpeg);
+            var map = characteristics?.Get(CameraCharacteristics.ScalerStreamConfigurationMap)
+                as StreamConfigurationMap;
+            var sizes = map?.GetOutputSizes((int)ImageFormatType.Jpeg);
             var resolutions = sizes?
                 .Where(size => size != null && size.Width > 0 && size.Height > 0)
                 .Select(size => new PhotoResolution(size!.Width, size.Height, CreatePhotoResolutionLabel(size.Width, size.Height)))
-                .DistinctBy(resolution => (resolution.Width, resolution.Height))
-                .OrderByDescending(resolution => resolution.Width * resolution.Height)
-                .ThenByDescending(resolution => resolution.Width)
+                .DistinctBy(r => (r.Width, r.Height))
+                .OrderByDescending(r => r.Width * r.Height)
+                .ThenByDescending(r => r.Width)
                 .ToList();
 
             this.supportedPhotoResolutions = resolutions is { Count: > 0 }
@@ -417,56 +442,43 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
         }
     }
 
-    private string? ResolveCameraIdForCurrentFacing(global::Android.Hardware.Camera2.CameraManager? cameraManager)
+    private string? ResolveCameraIdForCurrentFacing(CameraManager? cameraManager)
     {
-        if (cameraManager == null)
-            return null;
-
-        foreach (var cameraId in cameraManager.GetCameraIdList())
+        if (cameraManager == null) return null;
+        foreach (var id in cameraManager.GetCameraIdList())
         {
             try
             {
-                var characteristics = cameraManager.GetCameraCharacteristics(cameraId);
-                var facing = characteristics?.Get(global::Android.Hardware.Camera2.CameraCharacteristics.LensFacing)
-                    as Java.Lang.Integer;
-                if (facing?.IntValue() == this.lensFacing)
-                    return cameraId;
+                var chars = cameraManager.GetCameraCharacteristics(id);
+                var facing = chars?.Get(CameraCharacteristics.LensFacing) as Java.Lang.Integer;
+                if (facing?.IntValue() == this.lensFacing) return id;
             }
-            catch
-            {
-            }
+            catch { }
         }
-
         return cameraManager.GetCameraIdList().FirstOrDefault();
     }
 
     private PhotoResolution GetBestSupportedPhotoResolution(PhotoResolution preferred)
     {
-        if (this.supportedPhotoResolutions.Count == 0)
-            return preferred;
-
-        var exact = this.supportedPhotoResolutions.FirstOrDefault(r =>
-            r.Width == preferred.Width && r.Height == preferred.Height);
-        if (exact != null)
-            return exact;
-
-        var preferredPixels = preferred.Width * preferred.Height;
+        if (this.supportedPhotoResolutions.Count == 0) return preferred;
+        var exact = this.supportedPhotoResolutions.FirstOrDefault(r => r.Width == preferred.Width && r.Height == preferred.Height);
+        if (exact != null) return exact;
+        var pixels = preferred.Width * preferred.Height;
         return this.supportedPhotoResolutions
-            .OrderBy(resolution => Math.Abs((resolution.Width * resolution.Height) - preferredPixels))
-            .ThenBy(resolution => Math.Abs(((double)resolution.Width / resolution.Height) - preferred.AspectRatio))
+            .OrderBy(r => Math.Abs((r.Width * r.Height) - pixels))
+            .ThenBy(r => Math.Abs(((double)r.Width / r.Height) - preferred.AspectRatio))
             .First();
     }
 
-    private static string CreatePhotoResolutionLabel(int width, int height)
+    private static string CreatePhotoResolutionLabel(int w, int h)
     {
-        var ratio = (double)width / height;
-        var megapixels = width * height / 1_000_000d;
-        var ratioLabel = Math.Abs(ratio - 4d / 3d) < 0.03 ? "4:3"
+        var ratio = (double)w / h;
+        var mp = w * h / 1_000_000d;
+        var label = Math.Abs(ratio - 4d / 3d) < 0.03 ? "4:3"
             : Math.Abs(ratio - 16d / 9d) < 0.03 ? "16:9"
             : Math.Abs(ratio - 1d) < 0.03 ? "1:1"
             : $"{ratio:F2}:1";
-
-        return $"{ratioLabel} {megapixels:F1}MP";
+        return $"{label} {mp:F1}MP";
     }
 
 }

@@ -12,8 +12,7 @@
     <PackageReference Include="Avalonia.Fonts.Inter" />
   </ItemGroup>
 
-
-	<ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\CameraView.Demo\CameraView.Demo.csproj" />
   </ItemGroup>
 </Project>

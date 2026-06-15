@@ -41,7 +41,7 @@
                         FontSize="13"
                         Foreground="Coral"
                         Text="{Binding StatusText}"
-                        TextWrapping="Wrap" Width="220" IsVisible="False" />
+                        TextWrapping="Wrap" Width="220" />
                     <Button x:Name="OpenStatusButton" Content="查看状态" Width="90" />
                 </StackPanel>
 

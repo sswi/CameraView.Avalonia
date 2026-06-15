@@ -38,9 +38,9 @@ public class AndroidDeviceOrientationProvider : Java.Lang.Object, ISensorEventLi
         this.sensorManager?.UnregisterListener(this);
     }
 
-    public void OnSensorChanged(SensorEvent? e)
+    public void OnSensorChanged(SensorEvent e)
     {
-        if (e?.Sensor?.Type != SensorType.RotationVector) return;
+        if (e.Sensor?.Type != SensorType.RotationVector) return;
         if (e.Values == null || e.Values.Count < 4) return;
 
         try
@@ -61,24 +61,18 @@ public class AndroidDeviceOrientationProvider : Java.Lang.Object, ISensorEventLi
                 SensorManager.GetRotationMatrixFromVector(rotation, quat);
             }
 
-            // Remap to camera coordinate system (rotate -90 around X for portrait)
-            float[] remapped = new float[9];
-            SensorManager.RemapCoordinateSystem(
-                rotation,
-                Axis.X, Axis.Z,
-                remapped);
-
-            SensorManager.GetOrientation(remapped, this.orientationValues);
+            // Use default device coordinate system (matches screen orientation)
+            SensorManager.GetOrientation(rotation, this.orientationValues);
 
             // orientationValues: [0]=Azimuth(yaw), [1]=Pitch, [2]=Roll (radians)
             float pitch = MathF.Round(RadToDeg(this.orientationValues[1]), 1);
             float roll = MathF.Round(RadToDeg(this.orientationValues[2]), 1);
             float yaw = MathF.Round(RadToDeg(this.orientationValues[0]), 1);
 
-            // Extract gravity from rotation matrix column
-            float gx = MathF.Round(remapped[6], 3);
-            float gy = MathF.Round(remapped[7], 3);
-            float gz = MathF.Round(remapped[8], 3);
+            // Gravity = inverse of world-up = -column2 of rotation matrix
+            float gx = MathF.Round(-rotation[6], 3);
+            float gy = MathF.Round(-rotation[7], 3);
+            float gz = MathF.Round(-rotation[8], 3);
 
             var orientation = new DeviceOrientation(pitch, roll, yaw, gx, gy, gz, DateTime.Now);
             this.CurrentOrientation = orientation;

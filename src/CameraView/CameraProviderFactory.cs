@@ -7,53 +7,63 @@ public static class CameraProviderFactory
 {
 #if ANDROID
     private static ICameraProvider? cachedProvider;
+    private static Func<IDeviceOrientationProvider?>? orientationFactory;
+    private static object? pendingActivity;
+
+    /// <summary>注册 Android 相机提供者（由 MainActivity 调用）</summary>
+    public static void RegisterProvider(ICameraProvider provider)
+    {
+        cachedProvider = provider;
+    }
+
+    /// <summary>注册方向传感器工厂（由 MainActivity 调用）</summary>
+    public static void RegisterOrientationFactory(Func<IDeviceOrientationProvider?> factory)
+    {
+        orientationFactory = factory;
+    }
 
     /// <summary>注入当前 Activity（用于权限请求）</summary>
     public static void SetAndroidActivity(object activity)
     {
         if (cachedProvider is ICameraActivityAware aware)
             aware.SetActivity(activity);
+        else
+            pendingActivity = activity;
     }
 
-    /// <summary>创建 Android 相机提供者（单例缓存）</summary>
+    /// <summary>通知 Android 权限请求结果</summary>
+    public static void NotifyAndroidPermissionResult(bool granted)
+    {
+        if (cachedProvider != null)
+        {
+            var method = cachedProvider.GetType().GetMethod("NotifyPermissionResult",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            method?.Invoke(cachedProvider, [granted]);
+        }
+    }
+
     public static ICameraProvider Create()
     {
         if (cachedProvider != null)
+        {
+            if (pendingActivity != null)
+            {
+                ((ICameraActivityAware)cachedProvider).SetActivity(pendingActivity);
+                pendingActivity = null;
+            }
             return cachedProvider;
-
-        var context = Android.App.Application.Context;
-        cachedProvider = new Platforms.Android.AndroidCameraProvider(context);
-        return cachedProvider;
+        }
+        throw new InvalidOperationException("Android provider not registered. Call RegisterProvider in MainActivity.OnCreate.");
     }
 #elif IOS
     public static ICameraProvider Create()
     {
         return new Platforms.iOS.iOSCameraProvider();
     }
-#elif WINDOWS
-    public static ICameraProvider Create()
-    {
-        return new Platforms.Windows.WindowsCameraProvider();
-    }
-#elif LINUX
-    public static ICameraProvider Create()
-    {
-        return new Platforms.Linux.LinuxCameraProvider();
-    }
-#elif MACOS
-    public static ICameraProvider Create()
-    {
-        return new Platforms.macOS.MacCameraProvider();
-    }
-#elif BROWSER
-    public static ICameraProvider Create()
-    {
-        return new Platforms.Browser.BrowserCameraProvider();
-    }
 #else
     public static ICameraProvider Create()
     {
-        throw new PlatformNotSupportedException("CameraView 仅支持浏览器(WASM)、Windows、macOS、Linux、Android 和 iOS 平台。");
+        throw new PlatformNotSupportedException("CameraView 仅支持 Android 和 iOS 平台。");
     }
 #endif
 
@@ -61,8 +71,7 @@ public static class CameraProviderFactory
     public static IDeviceOrientationProvider? CreateOrientationProvider()
     {
 #if ANDROID
-        var context = Android.App.Application.Context;
-        return new Platforms.Android.AndroidDeviceOrientationProvider(context);
+        return orientationFactory?.Invoke();
 #elif IOS
         return new Platforms.iOS.iOSDeviceOrientationProvider();
 #else

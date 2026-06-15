@@ -1,3 +1,4 @@
+using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -19,15 +20,14 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
 
     public int TargetCoordinateSystem => ImageAnalysis.CoordinateSystemOriginal;
 
-    public void Analyze(IImageProxy? proxy)
+    public void Analyze(IImageProxy proxy)
     {
         try
         {
-            // Process every frame for smooth preview
-            var image = proxy?.Image;
+            var image = proxy.Image;
             if (image == null) return;
 
-            int rotationDegrees = proxy?.ImageInfo?.RotationDegrees ?? 0;
+            int rotationDegrees = proxy.ImageInfo?.RotationDegrees ?? 0;
 
             var yuvPlanes = image.GetPlanes();
             if (yuvPlanes == null || yuvPlanes.Length < 3) return;
@@ -113,7 +113,8 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
             var dst = (byte*)skBitmap.GetPixels().ToPointer();
             int dstRowBytes = width * 4;
 
-            Parallel.For(0, height, row =>
+            // Sequential loop – Parallel.For overhead hurts on mobile
+            for (int row = 0; row < height; row++)
             {
                 int yRowOff = row * yRowStride;
                 int uvRowOff = (row / 2) * uvRowStride;
@@ -141,7 +142,7 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
                     int y0 = srcY[yRowOff + col] & 0xFF;
                     YuvToBgra(y0, srcU[uvIdx] - 128, srcV[uvIdx] - 128, dst + dstRowOff + col * 4);
                 }
-            });
+            }
         }
 
         return skBitmap;

@@ -25,5 +25,4 @@ global using AndroidX.Camera.Lifecycle;
 global using AndroidX.Core.App;
 global using AndroidX.Core.Content;
 global using AndroidX.Lifecycle;
-global using CameraView.Platforms.Android;
 #endif

@@ -22,7 +22,7 @@ public class CameraViewControl : TemplatedControl
 
     // ========== 服务实例 ==========
     private ICameraProvider? cameraProvider;
-    private readonly IDeviceOrientationProvider? orientationProvider;
+    private IDeviceOrientationProvider? orientationProvider;
     private readonly FrameProcessor? frameProcessor;
     private DateTime lastOrientationUpdate;
     private bool isFocusing;
@@ -149,11 +149,6 @@ public class CameraViewControl : TemplatedControl
             DeviceOrientationState.PortraitUpright, defaultBindingMode: BindingMode.OneWayToSource);
     public DeviceOrientationState OrientationState { get => GetValue(OrientationStateProperty); private set => SetValue(OrientationStateProperty, value); }
 
-    /// <summary>预览帧宽高比（自动从帧尺寸计算，用于 UI 约束预览比例）</summary>
-    public static readonly StyledProperty<double> PreviewAspectRatioProperty =
-        AvaloniaProperty.Register<CameraViewControl, double>(nameof(PreviewAspectRatio), 4.0 / 3);
-    public double PreviewAspectRatio { get => GetValue(PreviewAspectRatioProperty); private set => SetValue(PreviewAspectRatioProperty, value); }
-
     // ========================================================================
     //  事件
     // ========================================================================
@@ -172,21 +167,6 @@ public class CameraViewControl : TemplatedControl
         frameProcessor = new FrameProcessor();
         frameProcessor.FrameReady += OnFrameReady;
         frameProcessor.FpsUpdated += OnFpsUpdated;
-
-        // 初始化设备朝向传感器
-        orientationProvider = CameraProviderFactory.CreateOrientationProvider();
-        orientationProvider?.OrientationChanged += o =>
-            {
-                var now = DateTime.Now;
-                if ((now - lastOrientationUpdate).TotalMilliseconds > 100)  // 限流 ~10Hz
-                {
-                    lastOrientationUpdate = now;
-                    DeviceOrientation = o;
-#if IOS
-                    (cameraProvider as Platforms.iOS.iOSCameraProvider)?.UpdateDeviceOrientation(o.State);
-#endif
-                }
-            };
     }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -235,6 +215,7 @@ public class CameraViewControl : TemplatedControl
             IsBusying = true;
             await cameraProvider.StartPreviewAsync();
             IsBusying = false;
+            EnsureOrientationProvider();
             orientationProvider?.Start();
         }
     }
@@ -248,6 +229,24 @@ public class CameraViewControl : TemplatedControl
             IsBusying = true;
             await cameraProvider.StopPreviewAsync();
             IsBusying = false;
+        }
+    }
+
+    private void EnsureOrientationProvider()
+    {
+        if (orientationProvider != null) return;
+        orientationProvider = CameraProviderFactory.CreateOrientationProvider();
+        if (orientationProvider != null)
+        {
+            orientationProvider.OrientationChanged += o =>
+            {
+                var now = DateTime.Now;
+                if ((now - lastOrientationUpdate).TotalMilliseconds > 100)
+                {
+                    lastOrientationUpdate = now;
+                    DeviceOrientation = o;
+                }
+            };
         }
     }
 
@@ -269,8 +268,6 @@ public class CameraViewControl : TemplatedControl
             IsBusying = true;
             var newFacing = cameraProvider.CurrentFacing == CameraFacing.Back ? CameraFacing.Front : CameraFacing.Back;
             await cameraProvider.SwitchCameraAsync(newFacing);
-            // 同步 CameraFacing 属性，避免 UI 状态与实际不一致
-            SetCurrentValue(CameraFacingProperty, cameraProvider.CurrentFacing);
             IsBusying = false;
         }
     }
@@ -285,13 +282,10 @@ public class CameraViewControl : TemplatedControl
         frameProcessor?.ProcessPreviewFrame(frame);
     }
 
-    /// <summary>FrameProcessor 处理好帧 → 更新 UI，同时同步预览比例</summary>
+    /// <summary>FrameProcessor 处理好帧 → 更新 UI</summary>
     private void OnFrameReady(Bitmap bitmap)
     {
         previewImage?.Source = bitmap;
-        // 帧比例变化时通知模板更新容器尺寸
-        var ratio = (double)bitmap.PixelSize.Width / bitmap.PixelSize.Height;
-        SetCurrentValue(PreviewAspectRatioProperty, ratio);
     }
 
     /// <summary>FPS 更新 → 仅 DebugMode 时显示</summary>
@@ -320,15 +314,12 @@ public class CameraViewControl : TemplatedControl
 
         if (error.Contains("Photo", StringComparison.OrdinalIgnoreCase))
         {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                IsBusying = false;
-                SetValue(IsCapturingNextFrameProperty, false);
+            IsBusying = false;
+            SetValue(IsCapturingNextFrameProperty, false);
 
-                var result = new PhotoCaptureResult(false, null, error);
-                var cmd = PhotoCapturedCommand;
-                if (cmd?.CanExecute(result) == true) cmd.Execute(result);
-            });
+            var result = new PhotoCaptureResult(false, null, error);
+            var cmd = PhotoCapturedCommand;
+            if (cmd?.CanExecute(result) == true) cmd.Execute(result);
         }
     }
 

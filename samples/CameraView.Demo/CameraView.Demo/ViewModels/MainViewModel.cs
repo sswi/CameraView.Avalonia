@@ -229,6 +229,7 @@ public partial class MainViewModel : ViewModelBase
             {
                 // 无相册保存器时才保存到文件系统
                 var dir = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                System.IO.Directory.CreateDirectory(dir);
                 var path = System.IO.Path.Combine(dir, $"photo_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
                 System.IO.File.WriteAllBytes(path, result.ImageData);
                 this.StatusText = $"照片已保存: {result.ImageData.Length / 1024} KB";
