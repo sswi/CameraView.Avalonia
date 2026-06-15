@@ -168,10 +168,14 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             };
             if (OperatingSystem.IsIOSVersionAtLeast(16))
             {
-                // 使用 photoOutput.MaxPhotoDimensions（已在 UpdateCameraAsync 中设为合法值）
-                var max = this.photoOutput.MaxPhotoDimensions;
-                if (max.Width > 0 && max.Height > 0)
-                    settings.MaxPhotoDimensions = max;
+                // 从当前 format 的 SupportedMaxPhotoDimensions 中选最佳匹配
+                var dims = (this.captureDevice.ActiveFormat.SupportedMaxPhotoDimensions ?? [])
+                    .Where(d => d.Width > 0 && d.Height > 0)
+                    .OrderBy(d => Math.Abs(d.Width - this.PhotoResolution.Width)
+                                + Math.Abs(d.Height - this.PhotoResolution.Height))
+                    .FirstOrDefault();
+                if (dims.Width > 0 && dims.Height > 0)
+                    settings.MaxPhotoDimensions = dims;
             }
 
             currentPhotoDelegate?.Dispose();
@@ -424,17 +428,16 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
 
             this.session.SessionPreset = GetPreviewSessionPreset(this.PhotoResolution);
 
-            // 从当前 ActiveFormat 的 SupportedMaxPhotoDimensions 中找最匹配的目标
-            // 不切换 ActiveFormat（避免预览变糊），只设 photoOutput.MaxPhotoDimensions
+            // 设置拍照最大输出尺寸（不切 format，避免预览变糊）
             if (OperatingSystem.IsIOSVersionAtLeast(16) && this.captureDevice != null)
             {
-                var dims = (this.captureDevice.ActiveFormat.SupportedMaxPhotoDimensions ?? [])
+                var max = (this.captureDevice.ActiveFormat.SupportedMaxPhotoDimensions ?? [])
                     .Where(d => d.Width > 0 && d.Height > 0)
-                    .OrderBy(d => Math.Abs(d.Width - this.PhotoResolution.Width) + Math.Abs(d.Height - this.PhotoResolution.Height))
+                    .OrderByDescending(d => d.Width * d.Height)
                     .FirstOrDefault();
 
-                if (dims.Width > 0 && dims.Height > 0)
-                    this.photoOutput.MaxPhotoDimensions = new CMVideoDimensions(dims.Width, dims.Height);
+                if (max.Width > 0)
+                    this.photoOutput.MaxPhotoDimensions = max;
             }
         }
         finally
@@ -546,8 +549,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
         if (this.captureDevice == null)
             return [];
 
-        // MAUI 方式：读 FormatDescription.Dimensions（format 真实像素），
-        // 跳过纯视频 codec（CV420YpCbCr8BiPlanarVideoRange），去重排序
+        // MAUI 方式：读 FormatDescription.Dimensions（format 真实像素），跳纯视频 codec
         return this.captureDevice.Formats
             .Select(f => new
             {
