@@ -31,7 +31,8 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     private bool disposed;
     private bool isCapturingPhoto; // 防止拍照回调重复触发
     private CameraFacing currentFacing = CameraFacing.Back;
-    private int _rotationAngle = 90; // 当前帧旋转角度，由 FrameAnalyzer 更新
+    private int _rotationAngle = 90; // 预览帧旋转角度，由 FrameAnalyzer 更新
+    private DeviceOrientationState _deviceOrientation = DeviceOrientationState.PortraitUpright; // 自定义方向传感器
 
     public bool IsInitialized => this.session != null;
     public CameraFacing CurrentFacing => this.currentFacing;
@@ -199,13 +200,17 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
                     this.PhotoResolution.Width, this.PhotoResolution.Height);
             }
 
+            // 在按快门瞬间捕获设备方向，避免 delegate 回调时方向已变
+            var capturedOrientation = _deviceOrientation;
+
             currentPhotoDelegate?.Dispose();
             currentPhotoDelegate = new PhotoCaptureDelegate(
                 data =>
                 {
                     currentPhotoDelegate = null;
                     this.isCapturingPhoto = false;
-                    var rotated = RotatePhotoData(data, this._rotationAngle);
+                    var photoAngle = GetPhotoRotationAngle(capturedOrientation);
+                    var rotated = RotatePhotoData(data, photoAngle);
                     UIKit.UIApplication.SharedApplication.InvokeOnMainThread(() =>
                         this.PhotoCaptured?.Invoke(this, rotated));
                 },
@@ -466,13 +471,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             this.session.CommitConfiguration();
         }
 
-        // 注册设备方向变化通知 → 通知 FrameAnalyzer 旋转角度
-        UIDevice.Notifications.ObserveOrientationDidChange((_, _) =>
-        {
-            this.frameAnalyzer?.SetDeviceOrientation(UIDevice.CurrentDevice.Orientation);
-        });
-        // 初始设置
-        this.frameAnalyzer?.SetDeviceOrientation(UIDevice.CurrentDevice.Orientation);
+        // 方向由 CameraViewControl 通过 UpdateDeviceOrientation 传入（重力传感器，不用 UIDeviceOrientation）
 
         return Task.CompletedTask;
     }
@@ -718,15 +717,31 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             : AVCapturePhotoQualityPrioritization.Balanced;
     }
 
-    /// <summary>
-    /// SKCodec 读取裸传感器像素（不应用 EXIF），按 _rotationAngle 旋转后重编码。
-    /// angle 已合并预览基准 + 照片额外纠正，统一一次旋转。
-    /// </summary>
+    /// <summary>由 CameraViewControl 调用，使用重力传感器方向（非 UIDeviceOrientation）。</summary>
+    public void UpdateDeviceOrientation(DeviceOrientationState state)
+    {
+        _deviceOrientation = state;
+        this.frameAnalyzer?.SetDeviceOrientation(state);
+    }
+
+    /// <summary>拍照时的旋转角度。</summary>
+    private static int GetPhotoRotationAngle(DeviceOrientationState orientation)
+    {
+        return orientation switch
+        {
+            DeviceOrientationState.PortraitUpright => 90,     // 0 + 90
+            DeviceOrientationState.LandscapeLeft => 0,         // 270 + 90 = 360 = 0
+            DeviceOrientationState.PortraitUpsideDown => 270,  // 180 + 90
+            DeviceOrientationState.LandscapeRight => 180,      // 90 + 90
+            _ => 0,
+        };
+    }
+
+    /// <summary>SKCodec 裸像素 → Skia 旋转 → JPEG 输出。</summary>
     private static byte[] RotatePhotoData(NSData data, int angle)
     {
         if (angle == 0) return data.ToArray();
 
-        // SKCodec 解码裸像素（不应用 EXIF 朝向）
         using var codec = SKCodec.Create(new System.IO.MemoryStream(data.ToArray()));
         if (codec == null) return data.ToArray();
 

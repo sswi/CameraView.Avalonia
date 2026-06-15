@@ -182,6 +182,9 @@ public class CameraViewControl : TemplatedControl
                 {
                     lastOrientationUpdate = now;
                     DeviceOrientation = o;
+#if IOS
+                    (cameraProvider as Platforms.iOS.iOSCameraProvider)?.UpdateDeviceOrientation(o.State);
+#endif
                 }
             };
     }

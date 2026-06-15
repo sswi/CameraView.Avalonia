@@ -1,8 +1,8 @@
 using AVFoundation;
+using CameraView.Models;
 using CoreMedia;
 using CoreVideo;
 using SkiaSharp;
-using UIKit;
 
 namespace CameraView.Platforms.iOS;
 
@@ -32,23 +32,17 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
         }
     }
 
-    /// <summary>根据设备方向设置帧旋转角度（由 iOSCameraProvider 调用）</summary>
-    public void SetDeviceOrientation(UIDeviceOrientation orientation)
+    /// <summary>预览帧旋转角度。</summary>
+    public void SetDeviceOrientation(DeviceOrientationState state)
     {
-        if (orientation == UIDeviceOrientation.Unknown)
+        _rotationAngle = state switch
         {
-            orientation = UIApplication.SharedApplication.StatusBarOrientation switch
-            {
-                UIInterfaceOrientation.LandscapeLeft => UIDeviceOrientation.LandscapeRight,
-                UIInterfaceOrientation.LandscapeRight => UIDeviceOrientation.LandscapeLeft,
-                _ => UIDeviceOrientation.Portrait,
-            };
-        }
-
-        _rotationAngle = orientation switch
-        {
-            UIDeviceOrientation.Portrait => 90,
-            _ => 0,
+            DeviceOrientationState.PortraitUpright => 90,
+            DeviceOrientationState.LandscapeLeft => 90,        // 0 + 90
+            DeviceOrientationState.PortraitUpsideDown => 90,  // 270 + 180 = 450 = 90
+            DeviceOrientationState.LandscapeRight => 90,       // 180 + 270 = 450 = 90
+            DeviceOrientationState.FlatFaceDown => 0,  // 180 + 180 = 360 = 0
+            _ => 90,
         };
         this.onRotationChanged?.Invoke(_rotationAngle);
     }
