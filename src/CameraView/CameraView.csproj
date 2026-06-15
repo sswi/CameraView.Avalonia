@@ -13,8 +13,9 @@
 
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
 
-    <!-- Force Java stub/ACW generation for library's Java.Lang.Object subclasses -->
-    <AndroidGenerateJavaStubs Condition="$(TargetFramework.Contains('-android'))">true</AndroidGenerateJavaStubs>
+    <!-- NuGet package metadata -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,6 +38,20 @@
   <ItemGroup>
     <Compile Remove="Platforms\Android\**" Condition="!$(TargetFramework.Contains('-android'))" />
     <Compile Remove="Platforms\iOS\**" Condition="!$(TargetFramework.Contains('-ios'))" />
+  </ItemGroup>
+
+  <!-- AndroidExe: Java.Lang.Object files excluded from library compilation,
+       shipped in NuGet and injected into consumer EXE via buildTransitive targets.
+       This is required because .NET for Android only generates JNI stubs in EXE projects. -->
+  <ItemGroup>
+    <Compile Remove="AndroidExe\**" />
+    <None Include="AndroidExe\**\*.cs" Pack="true" PackagePath="AndroidExe\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="buildTransitive\**\*" Pack="true" PackagePath="buildTransitive\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- IDE visibility: show empty platform folders in Solution Explorer -->
+  <ItemGroup>
+    <Folder Include="Platforms\Android\" />
   </ItemGroup>
 
 </Project>

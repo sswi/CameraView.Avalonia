@@ -1,0 +1,10 @@
+<Project>
+  <!-- Inject Android platform source files into the consuming EXE project.
+       These Java.Lang.Object subclasses must be compiled in the executable
+       (not the library) for .NET for Android to generate JNI stubs/ACWs. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
+    <Compile Include="$(MSBuildThisFileDirectory)..\AndroidExe\**\*.cs">
+      <Link>CameraView\Platforms\Android\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+  </ItemGroup>
+</Project>
