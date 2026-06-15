@@ -48,9 +48,27 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
     public async Task SetPhotoResolutionAsync(PhotoResolution resolution)
     {
         this.PhotoResolution = resolution;
-        // 拍照分辨率通过 TakePhotoAsync 中的 settings.MaxPhotoDimensions 控制
-        // 不需要在此修改 photoOutput.MaxPhotoDimensions（变更可能导致 session 重配/预览中断）
-        await Task.CompletedTask;
+
+        // 找到支持目标分辨率的 format 并切过去 + 设 MaxPhotoDimensions
+        if (this.captureDevice != null && this.photoOutput != null && OperatingSystem.IsIOSVersionAtLeast(16))
+        {
+            var target = this.captureDevice.Formats
+                .Select(f => new { Format = f, Max = (f.SupportedMaxPhotoDimensions ?? []).FirstOrDefault(d => d.Width == resolution.Width && d.Height == resolution.Height) })
+                .FirstOrDefault(x => x.Max.Width > 0);
+
+            if (target != null && !ReferenceEquals(this.captureDevice.ActiveFormat, target.Format))
+            {
+                try
+                {
+                    this.captureDevice.LockForConfiguration(out var e);
+                    if (e == null) this.captureDevice.ActiveFormat = target.Format;
+                    this.captureDevice.UnlockForConfiguration();
+                }
+                catch { }
+            }
+
+            this.photoOutput.MaxPhotoDimensions = new CMVideoDimensions(resolution.Width, resolution.Height);
+        }
     }
 
     public event EventHandler<byte[]>? PhotoCaptured;
@@ -168,14 +186,9 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
             };
             if (OperatingSystem.IsIOSVersionAtLeast(16))
             {
-                // 从当前 format 的 SupportedMaxPhotoDimensions 中选最佳匹配
-                var dims = (this.captureDevice.ActiveFormat.SupportedMaxPhotoDimensions ?? [])
-                    .Where(d => d.Width > 0 && d.Height > 0)
-                    .OrderBy(d => Math.Abs(d.Width - this.PhotoResolution.Width)
-                                + Math.Abs(d.Height - this.PhotoResolution.Height))
-                    .FirstOrDefault();
-                if (dims.Width > 0 && dims.Height > 0)
-                    settings.MaxPhotoDimensions = dims;
+                // format 已在 SetPhotoResolutionAsync 中切换，直接指定
+                settings.MaxPhotoDimensions = new CMVideoDimensions(
+                    this.PhotoResolution.Width, this.PhotoResolution.Height);
             }
 
             currentPhotoDelegate?.Dispose();
