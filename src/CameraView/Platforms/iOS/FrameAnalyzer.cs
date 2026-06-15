@@ -45,18 +45,10 @@ internal class FrameAnalyzer : AVCaptureVideoDataOutputSampleBufferDelegate
             };
         }
 
-        // 预览基准 + 照片纠正1 + 照片纠正2
-        // 竖屏: 90 + 0 + 0 = 90
-        // 朝左: 0 + 270 + 270 = 540 = 180
-        // 朝右: 180 + 0 + 0 = 180
-        // 倒置: 180 + 180 + 180 = 540 = 180
         _rotationAngle = orientation switch
         {
             UIDeviceOrientation.Portrait => 90,
-            UIDeviceOrientation.LandscapeLeft => 180,
-            UIDeviceOrientation.LandscapeRight => 180,
-            UIDeviceOrientation.PortraitUpsideDown => 180,
-            _ => 90,
+            _ => 0,
         };
         this.onRotationChanged?.Invoke(_rotationAngle);
     }
