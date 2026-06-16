@@ -2,14 +2,20 @@
 
   <PropertyGroup>
     <TargetFrameworks>net10.0;net10.0-android;net10.0-ios</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(TargetFrameworks);net10.0-macos</TargetFrameworks>
     <OutputType>Library</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>CameraView</RootNamespace>
+    <DefineConstants Condition="$(TargetFramework.Contains('-browser'))">$(DefineConstants);BROWSER</DefineConstants>
+    <DefineConstants Condition="$(TargetFramework.Contains('net10.0')) and $([MSBuild]::IsOSPlatform('Linux'))">$(DefineConstants);LINUX</DefineConstants>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.19041.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'macos'">10.15</SupportedOSPlatformVersion>
 
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
 
@@ -19,8 +25,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia"  Version="12.0.4"/>
-    <PackageReference Include="SkiaSharp"  Version="3.119.4" />
+    <PackageReference Include="Avalonia" Version="12.0.*" />
+    <PackageReference Include="SkiaSharp" Version="3.*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,27 +35,30 @@
 
   <!-- Android-specific packages -->
   <ItemGroup Condition="$(TargetFramework.Contains('-android'))">
-    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2"  Version="1.6.1"/>
-    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle"  Version="1.6.1"/>
-    <PackageReference Include="Xamarin.AndroidX.Camera.View"  Version="1.6.1"/>
+    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" Version="1.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.View" Version="1.6.1" />
   </ItemGroup>
 
-  <!-- Platform-specific source exclusions -->
+  <!-- Platform-specific source exclusions: only compile platform files for their own TFM -->
   <ItemGroup>
     <Compile Remove="Platforms\Android\**" Condition="!$(TargetFramework.Contains('-android'))" />
     <Compile Remove="Platforms\iOS\**" Condition="!$(TargetFramework.Contains('-ios'))" />
+    <Compile Remove="Platforms\Windows\**" Condition="!$(TargetFramework.Contains('-windows'))" />
+    <Compile Remove="Platforms\macOS\**" Condition="!$(TargetFramework.Contains('-macos'))" />
+    <Compile Remove="Platforms\Browser\**" Condition="!$(TargetFramework.Contains('-browser'))" />
+    <Compile Remove="Platforms\Linux\**" Condition="!$([MSBuild]::IsOSPlatform('Linux'))" />
   </ItemGroup>
 
   <!-- AndroidExe: Java.Lang.Object files excluded from library compilation,
-       shipped in NuGet and injected into consumer EXE via buildTransitive targets.
-       This is required because .NET for Android only generates JNI stubs in EXE projects. -->
+       shipped in NuGet and injected into consumer EXE via buildTransitive targets. -->
   <ItemGroup>
     <Compile Remove="AndroidExe\**" />
     <None Include="AndroidExe\**\*.cs" Pack="true" PackagePath="AndroidExe\%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="buildTransitive\**\*" Pack="true" PackagePath="buildTransitive\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <!-- IDE visibility: show empty platform folders in Solution Explorer -->
+  <!-- IDE visibility: show platform folders in Solution Explorer -->
   <ItemGroup>
     <Folder Include="Platforms\Android\" />
   </ItemGroup>
