@@ -70,15 +70,15 @@ public static class CameraProviderFactory
     {
         return new Platforms.macOS.MacCameraProvider();
     }
-#elif BROWSER
-    public static ICameraProvider Create()
-    {
-        return new Platforms.Browser.BrowserCameraProvider();
-    }
 #else
     public static ICameraProvider Create()
     {
-        throw new PlatformNotSupportedException("CameraView 不支持当前平台。");
+        // Runtime detection for browser (WASM) — the BROWSER constant may not
+        // be defined by the SDK on all .NET versions.
+        if (OperatingSystem.IsBrowser())
+            return new Platforms.Browser.BrowserCameraProvider();
+
+        throw new PlatformNotSupportedException($"CameraView 不支持当前平台。");
     }
 #endif
 

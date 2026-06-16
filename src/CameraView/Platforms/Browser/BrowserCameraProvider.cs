@@ -1,4 +1,3 @@
-#if BROWSER
 using System.Runtime.InteropServices.JavaScript;
 using CameraView.Models;
 using CameraView.Services;
@@ -308,4 +307,3 @@ internal partial class BrowserCameraProvider : ICameraProvider
             .First();
     }
 }
-#endif

@@ -172,15 +172,52 @@ internal class WindowsCameraProvider : ICameraProvider
         try
         {
             var stream = new InMemoryRandomAccessStream();
-            var encodingProperties = this.GetSelectedPhotoEncodingProperties() ?? ImageEncodingProperties.CreateJpeg();
+
+            // Apply selected photo resolution if we have encoding properties for it
+            var encodingProperties = this.GetSelectedPhotoEncodingProperties();
+            if (encodingProperties != null)
+            {
+                try
+                {
+                    await this.mediaCapture.SetEncodingPropertiesAsync(
+                        MediaStreamType.Photo, encodingProperties, null);
+                }
+                catch
+                {
+                    // Some cameras don't support this; continue with default
+                }
+            }
+
             await this.mediaCapture.CapturePhotoToStreamAsync(
-                encodingProperties, stream);
+                ImageEncodingProperties.CreateJpeg(), stream);
 
             using var inputStream = stream.GetInputStreamAt(0);
             using var reader = new DataReader(inputStream);
             await reader.LoadAsync((uint)stream.Size);
             var bytes = new byte[stream.Size];
             reader.ReadBytes(bytes);
+
+            // If the photo was captured at a different resolution than requested,
+            // resize using SkiaSharp to match the selected PhotoResolution
+            var targetW = this.PhotoResolution.Width;
+            var targetH = this.PhotoResolution.Height;
+            if (targetW > 0 && targetH > 0)
+            {
+                using var srcSkBitmap = SKBitmap.Decode(bytes);
+                if (srcSkBitmap != null && (srcSkBitmap.Width != targetW || srcSkBitmap.Height != targetH))
+                {
+                    var resized = srcSkBitmap.Resize(
+                        new SKImageInfo(targetW, targetH, SKColorType.Bgra8888),
+                        new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+                    if (resized != null)
+                    {
+                        using var image = SKImage.FromBitmap(resized);
+                        using var data = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+                        bytes = data.ToArray();
+                        resized.Dispose();
+                    }
+                }
+            }
 
             this.PhotoCaptured?.Invoke(this, bytes);
         }
@@ -372,10 +409,42 @@ internal class WindowsCameraProvider : ICameraProvider
     {
         try
         {
-            var options = this.mediaCapture?.VideoDeviceController?
+            var photoProps = this.mediaCapture?.VideoDeviceController?
                 .GetAvailableMediaStreamProperties(MediaStreamType.Photo)
                 .OfType<ImageEncodingProperties>()
                 .Where(p => p.Width > 0 && p.Height > 0)
+                .Select(p => (p.Width, p.Height))
+                .ToHashSet();
+
+            var videoProps = this.mediaCapture?.VideoDeviceController?
+                .GetAvailableMediaStreamProperties(MediaStreamType.VideoRecord)
+                .OfType<ImageEncodingProperties>()
+                .Where(p => p.Width > 0 && p.Height > 0)
+                .Select(p => (p.Width, p.Height))
+                .ToHashSet();
+
+            // Use photo resolutions, but cap at max video resolution if available
+            // (some webcams report unrealistic photo sizes)
+            ulong? maxVideoPixels = videoProps?.Max(v => (ulong)v.Width * v.Height);
+
+            var allProps = this.mediaCapture?.VideoDeviceController?
+                .GetAvailableMediaStreamProperties(MediaStreamType.Photo)
+                .OfType<ImageEncodingProperties>()
+                .Where(p => p.Width > 0 && p.Height > 0);
+
+            IEnumerable<ImageEncodingProperties> filtered;
+            if (maxVideoPixels.HasValue && maxVideoPixels > 0)
+            {
+                // Only include photo resolutions within 1.5x of max video resolution
+                double cap = (double)maxVideoPixels.Value * 1.5;
+                filtered = allProps?.Where(p => ((double)p.Width * p.Height) <= cap) ?? [];
+            }
+            else
+            {
+                filtered = allProps ?? [];
+            }
+
+            var options = filtered
                 .GroupBy(p => (p.Width, p.Height))
                 .Select(g => new PhotoEncodingOption(
                     new PhotoResolution((int)g.Key.Width, (int)g.Key.Height,
