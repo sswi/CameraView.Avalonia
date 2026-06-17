@@ -50,8 +50,8 @@ await CameraControl.StartCameraAsync();
 + <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
 ```
 
-> ⚠️ 多项目结构中，**引用 CameraView 的项目**（如 `ScanTallyApp.Desktop.csproj`）需要改，
-> 不是共享库项目（`ScanTallyApp.csproj` 保持 `net10.0`）。
+> ⚠️ 多项目结构中，**引用 CameraView 的项目**（如 `MyApp.Desktop.csproj`）需要改，
+> 不是共享库项目（`MyApp.csproj` 保持 `net10.0`）。
 
 ### 4. App.axaml — 加载控件模板
 
