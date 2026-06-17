@@ -39,4 +39,11 @@
     <!-- 直接引用以确保 Android TFM 的库（含 FrameAnalyzer 等）进入 APK -->
     <ProjectReference Include="..\..\..\src\CameraView\CameraView.csproj" />
   </ItemGroup>
+
+  <!-- Dev-time: include AndroidExe files (NuGet consumers get these via buildTransitive .targets) -->
+  <ItemGroup>
+    <Compile Include="..\..\..\src\CameraView\AndroidExe\**\*.cs">
+      <Link>CameraView\Platforms\Android\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+  </ItemGroup>
 </Project>

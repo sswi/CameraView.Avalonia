@@ -21,6 +21,15 @@
 
     <!-- NuGet package metadata -->
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>CameraView.Avalonia</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>XE.PAN</Authors>
+    <Description>Avalonia 跨平台相机控件 — 支持 Android/iOS/Windows/macOS/Linux/Browser 的相机预览与拍照</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://gitee.com/xecc/camera_view.avalonia</PackageProjectUrl>
+    <RepositoryUrl>https://gitee.com/xecc/camera_view.avalonia.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>avalonia;camera;cameraview;cross-platform;android;ios;windows;macos;linux;browser;skia</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
@@ -61,6 +70,10 @@
   <!-- IDE visibility: show platform folders in Solution Explorer -->
   <ItemGroup>
     <Folder Include="Platforms\Android\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

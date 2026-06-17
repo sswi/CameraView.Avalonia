@@ -17,7 +17,7 @@ using StreamConfigurationMap = Android.Hardware.Camera2.Params.StreamConfigurati
 
 namespace CameraView.Platforms.Android;
 
-public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermissions, ICameraActivityAware
+public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermissions, ICameraActivityAware, ICameraOrientationAware
 {
     private readonly Context appContext;
     private Activity? currentActivity;
@@ -30,6 +30,7 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     private CameraSelector? cameraSelector;
 
     private int lensFacing = CameraSelector.LensFacingBack;
+    private DeviceOrientationState deviceOrientation = DeviceOrientationState.PortraitUpright;
 
     public bool IsInitialized => this.cameraProvider != null;
     public CameraFacing CurrentFacing => this.lensFacing == CameraSelector.LensFacingBack
@@ -60,6 +61,12 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     public void SetActivity(object activity)
     {
         this.currentActivity = activity as Activity;
+    }
+
+    /// <summary>由 CameraViewControl 调用，使用重力传感器方向更新设备朝向</summary>
+    public void UpdateDeviceOrientation(DeviceOrientationState state)
+    {
+        this.deviceOrientation = state;
     }
 
     // --- ICameraPermissions ---
@@ -229,6 +236,9 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
 
         var outputOptions = new ImageCapture.OutputFileOptions.Builder(outputFile).Build();
 
+        // 在按快门瞬间捕获设备方向，避免回调时方向已变（同 iOS 做法）
+        var capturedOrientation = this.deviceOrientation;
+
         this.imageCapture.TakePicture(
             outputOptions,
             ContextCompat.GetMainExecutor(this.appContext),
@@ -238,7 +248,9 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
                     try
                     {
                         var bytes = System.IO.File.ReadAllBytes(outputFile.AbsolutePath);
-                        this.PhotoCaptured?.Invoke(this, bytes);
+                        var photoAngle = GetPhotoRotationAngle(capturedOrientation);
+                        var rotated = RotatePhotoData(bytes, photoAngle);
+                        this.PhotoCaptured?.Invoke(this, rotated);
                     }
                     catch (Exception ex)
                     {
@@ -404,6 +416,52 @@ public class AndroidCameraProvider : Services.ICameraProvider, ICameraPermission
     {
         this.cameraProvider?.UnbindAll();
         this.cameraProvider?.Dispose();
+    }
+
+    // ======== 照片方向校正（同 iOS RotatePhotoData） ========
+
+    /// <summary>设备朝向 → 照片旋转角度（与 iOS 一致）</summary>
+    private static int GetPhotoRotationAngle(DeviceOrientationState orientation)
+    {
+        return orientation switch
+        {
+            DeviceOrientationState.PortraitUpright => 90,     // 竖屏正拿
+            DeviceOrientationState.LandscapeLeft => 0,         // 朝左横屏
+            DeviceOrientationState.PortraitUpsideDown => 270,  // 倒立
+            DeviceOrientationState.LandscapeRight => 180,      // 朝右横屏
+            DeviceOrientationState.FlatFaceDown => 180,        // 平放朝下
+            DeviceOrientationState.FlatFaceUp => 0,            // 平放朝上
+            _ => 90
+        };
+    }
+
+    /// <summary>用 SkiaSharp 物理旋转 JPEG 像素（同 iOS RotatePhotoData）</summary>
+    private static byte[] RotatePhotoData(byte[] jpegData, int angle)
+    {
+        if (angle == 0) return jpegData;
+
+        using var codec = SKCodec.Create(new System.IO.MemoryStream(jpegData));
+        if (codec == null) return jpegData;
+
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height);
+        using var original = new SKBitmap(info);
+        if (codec.GetPixels(info, original.GetPixels()) != SKCodecResult.Success)
+            return jpegData;
+
+        bool swap = angle == 90 || angle == 270;
+        int w = swap ? info.Height : info.Width;
+        int h = swap ? info.Width : info.Height;
+
+        using var rotated = new SKBitmap(w, h, original.ColorType, original.AlphaType);
+        using var canvas = new SKCanvas(rotated);
+        canvas.Translate(w / 2f, h / 2f);
+        canvas.RotateDegrees(angle);
+        canvas.Translate(-info.Width / 2f, -info.Height / 2f);
+        canvas.DrawBitmap(original, 0, 0);
+
+        using var img = SKImage.FromBitmap(rotated);
+        using var encData = img.Encode(SKEncodedImageFormat.Jpeg, 100);
+        return encData.ToArray();
     }
 
     // ======== Resolution query (Camera2) ========
