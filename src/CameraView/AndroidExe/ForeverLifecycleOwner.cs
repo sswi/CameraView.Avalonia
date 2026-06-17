@@ -1,3 +1,6 @@
+using Android.Runtime;
+using AndroidX.Lifecycle;
+
 namespace CameraView.Platforms.Android;
 
 [Register("cameraview/platforms/android/ForeverLifecycleOwner")]

@@ -2,7 +2,9 @@ using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Android.Runtime;
 using AndroidX.Camera.Core;
+using SkiaSharp;
 
 namespace CameraView.Platforms.Android;
 

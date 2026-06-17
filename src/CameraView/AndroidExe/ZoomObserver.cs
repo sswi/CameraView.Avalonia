@@ -1,6 +1,7 @@
+using Android.Runtime;
 using AndroidX.Camera.Core;
+using AndroidX.Lifecycle;
 using System;
-
 namespace CameraView.Platforms.Android;
 
 [Register("cameraview/platforms/android/ZoomObserver")]

@@ -236,9 +236,7 @@ public class CameraViewControl : TemplatedControl
     {
         if (orientationProvider != null) return;
         orientationProvider = CameraProviderFactory.CreateOrientationProvider();
-        if (orientationProvider != null)
-        {
-            orientationProvider.OrientationChanged += o =>
+        orientationProvider?.OrientationChanged += o =>
             {
                 var now = DateTime.Now;
                 if ((now - lastOrientationUpdate).TotalMilliseconds > 100)
@@ -250,7 +248,6 @@ public class CameraViewControl : TemplatedControl
                         aware.UpdateDeviceOrientation(o.State);
                 }
             };
-        }
     }
 
     /// <summary>拍照（异步触发，结果通过 PhotoCaptured 事件/命令返回）</summary>
