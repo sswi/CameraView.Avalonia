@@ -12,7 +12,7 @@ using UIKit;
 
 namespace CameraView.Platforms.iOS;
 
-internal class iOSCameraProvider : ICameraProvider, ICameraPermissions
+internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraOrientationAware
 {
     private readonly AsyncLock updateCameraLock = new();
     private List<PhotoResolution> supportedPhotoResolutions = [.. PhotoResolution.DefaultPresets];

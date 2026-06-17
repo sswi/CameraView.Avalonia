@@ -245,6 +245,9 @@ public class CameraViewControl : TemplatedControl
                 {
                     lastOrientationUpdate = now;
                     DeviceOrientation = o;
+                    // 推送方向给 provider 用于照片旋转校正（iOS/Android）
+                    if (cameraProvider is ICameraOrientationAware aware)
+                        aware.UpdateDeviceOrientation(o.State);
                 }
             };
         }
