@@ -38,7 +38,25 @@ await CameraControl.InitializeCameraAsync(provider);
 await CameraControl.StartCameraAsync();
 ```
 
-### 3. Android 配置
+### 3. Windows 项目配置
+
+桌面应用必须目标 Windows 平台 TFM：
+
+```xml
+<!-- .csproj -->
+<TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+```
+
+### 4. App.axaml — 加载控件模板
+
+```xml
+<Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://CameraView/CameraViewControl.axaml" />
+</Application.Styles>
+```
+
+### 5. Android 配置
 
 ```csharp
 // MainActivity.OnCreate — 必须在 base.OnCreate 之前注册
@@ -50,7 +68,7 @@ base.OnCreate(savedInstanceState);
 CameraView.CameraProviderFactory.SetAndroidActivity(this);
 ```
 
-### 4. 权限
+### 6. 权限
 
 ```xml
 <!-- AndroidManifest.xml -->
