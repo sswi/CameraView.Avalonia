@@ -40,12 +40,18 @@ await CameraControl.StartCameraAsync();
 
 ### 3. Windows 项目配置
 
-桌面应用必须目标 Windows 平台 TFM：
+桌面项目的 `.csproj` 中 `TargetFramework` 必须改为 Windows 专用 TFM：
 
-```xml
-<!-- .csproj -->
-<TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+```diff
+<!--  ❌ 错误（不含 Windows API，CameraView 无法加载） -->
+- <TargetFramework>net10.0</TargetFramework>
+
+<!--  ✅ 正确 -->
++ <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
 ```
+
+> ⚠️ 多项目结构中，**引用 CameraView 的项目**（如 `ScanTallyApp.Desktop.csproj`）需要改，
+> 不是共享库项目（`ScanTallyApp.csproj` 保持 `net10.0`）。
 
 ### 4. App.axaml — 加载控件模板
 
