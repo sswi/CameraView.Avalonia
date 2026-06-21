@@ -17,13 +17,15 @@ namespace CameraView.Demo.Android;
 public class MainActivity : AvaloniaMainActivity
 {
     private const int CameraPermissionRequestCode = 1001;
+    private CameraView.Services.ICameraProvider? cameraProvider;
+    private bool wasCameraRunning;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         // Register BEFORE base.OnCreate — Avalonia init triggers ViewModel→Create() immediately
         var context = this.BaseContext;
-        var provider = new CameraView.Platforms.Android.AndroidCameraProvider(context);
-        CameraView.CameraProviderFactory.RegisterProvider(provider);
+        cameraProvider = new CameraView.Platforms.Android.AndroidCameraProvider(context);
+        CameraView.CameraProviderFactory.RegisterProvider(cameraProvider);
         CameraView.CameraProviderFactory.RegisterOrientationFactory(
             () => new CameraView.Platforms.Android.AndroidDeviceOrientationProvider(context));
 
@@ -35,6 +37,24 @@ public class MainActivity : AvaloniaMainActivity
 
         // Activity injection AFTER provider is registered
         CameraView.CameraProviderFactory.SetAndroidActivity(this);
+    }
+
+    protected override void OnPause()
+    {
+        base.OnPause();
+        wasCameraRunning = cameraProvider?.IsInitialized == true;
+        if (wasCameraRunning)
+            _ = cameraProvider!.StopPreviewAsync();
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        if (wasCameraRunning && cameraProvider != null)
+        {
+            wasCameraRunning = false;
+            _ = cameraProvider.StartPreviewAsync();
+        }
     }
 
     public override void OnRequestPermissionsResult(
