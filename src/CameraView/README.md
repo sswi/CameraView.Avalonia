@@ -108,7 +108,26 @@ if (!await perms.CheckPermissionAsync())
 CameraEnabled = true;
 ```
 
-无权限时相机启动会失败，通过 `ErrorOccurred` 事件输出错误信息。
+无权限时相机启动会失败，通过 `ErrorCommand`（MVVM）或 `CameraError` 事件输出错误信息。
+
+```xml
+<!-- XAML — MVVM 绑定 -->
+<cv:CameraViewControl ErrorCommand="{Binding OnCameraErrorCommand}" />
+```
+
+```csharp
+// ViewModel
+[RelayCommand]
+private void OnCameraError(string error)
+{
+    StatusText = $"相机错误: {error}";
+}
+```
+
+或者订阅事件：
+```csharp
+CameraControl.CameraError += (_, error) => Debug.WriteLine(error);
+```
 
 ## 功能
 
