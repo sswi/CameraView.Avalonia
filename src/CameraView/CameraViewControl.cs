@@ -107,6 +107,11 @@ public class CameraViewControl : TemplatedControl
         AvaloniaProperty.Register<CameraViewControl, ICommand?>(nameof(PhotoCapturedCommand));
     public ICommand? PhotoCapturedCommand { get => GetValue(PhotoCapturedCommandProperty); set => SetValue(PhotoCapturedCommandProperty, value); }
 
+    /// <summary>相机错误命令（参数为 string 错误消息）</summary>
+    public static readonly StyledProperty<ICommand?> ErrorCommandProperty =
+        AvaloniaProperty.Register<CameraViewControl, ICommand?>(nameof(ErrorCommand));
+    public ICommand? ErrorCommand { get => GetValue(ErrorCommandProperty); set => SetValue(ErrorCommandProperty, value); }
+
     /// <summary>调试模式：显示 FPS 叠加层 (TwoWay)</summary>
     public static readonly StyledProperty<bool> DebugModeProperty =
         AvaloniaProperty.Register<CameraViewControl, bool>(nameof(DebugMode), false);
@@ -312,10 +317,14 @@ public class CameraViewControl : TemplatedControl
         if (cmd?.CanExecute(result) == true) cmd.Execute(result);
     }
 
-    /// <summary>错误回调：如果是拍照错误也解除忙碌状态</summary>
+    /// <summary>错误回调：触发事件 + 执行 ErrorCommand + 拍照错误时解除忙碌</summary>
     private void OnCameraError(object? sender, string error)
     {
         CameraError?.Invoke(this, error);
+
+        var errCmd = ErrorCommand;
+        if (errCmd?.CanExecute(error) == true)
+            errCmd.Execute(error);
 
         if (error.Contains("Photo", StringComparison.OrdinalIgnoreCase))
         {
