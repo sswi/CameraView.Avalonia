@@ -91,7 +91,31 @@ base.OnCreate(savedInstanceState);
 CameraView.CameraProviderFactory.SetAndroidActivity(this);
 ```
 
+> 💡 **前后台生命周期：** App 切到后台时相机应停止（释放 Camera 资源）。可在 `MainActivity` 中添加：
+>
+> ```csharp
+> protected override void OnPause()
+> {
+>     base.OnPause();
+>     if (cameraProvider?.IsInitialized == true)
+>         _ = cameraProvider.StopPreviewAsync();
+> }
+>
+> protected override void OnResume()
+> {
+>     base.OnResume();
+>     if (wasCameraRunning)
+>         _ = cameraProvider.StartPreviewAsync();
+> }
+> ```
+>
+> iOS 端由 `iOSCameraProvider` 内部自动处理，无需额外配置。
+
 ### 6. 权限
+
+>
+> iOS 端由 `iOSCameraProvider` 内部自动处理，无需额外配置。
+
 
 ```xml
 <!-- AndroidManifest.xml -->
