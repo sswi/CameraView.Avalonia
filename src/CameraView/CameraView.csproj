@@ -22,11 +22,10 @@
     <!-- NuGet package metadata -->
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageId>CameraView.Avalonia</PackageId>
-    <Version>1.0.18</Version>
+    <Version>1.0.19</Version>
     <PackageIcon>icon.png</PackageIcon>
     <Authors>XE.PAN</Authors>
     <Description>Avalonia 跨平台相机控件 — 支持 Android/iOS/Windows/macOS/Linux/Browser 的相机预览与拍照</Description>
-    <PackageLicenseExpression>MulanPSL-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://gitee.com/xecc/camera_view.avalonia</PackageProjectUrl>
     <RepositoryUrl>https://gitee.com/xecc/camera_view.avalonia.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -75,8 +74,8 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
-    <None Include="....LICENSE" Pack="true" PackagePath="\" />
     <None Include="icon.png" Pack="true" PackagePath="\" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

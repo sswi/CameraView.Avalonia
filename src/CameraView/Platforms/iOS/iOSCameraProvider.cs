@@ -28,6 +28,9 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
     private bool torchOn;
 
     private bool started;
+    private NSObject? bgObserver;
+    private NSObject? fgObserver;
+    private bool wasStartedBeforeBg;
     private bool disposed;
     private bool isCapturingPhoto; // 防止拍照回调重复触发
     private CameraFacing currentFacing = CameraFacing.Back;
@@ -138,6 +141,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
                 {
                     this.session.StopRunning();
                     this.started = false;
+                UnregisterLifecycleNotifications();
                 }
 
                 await this.UpdateCameraAsync();
@@ -147,6 +151,8 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
 
                 this.session.StartRunning();
                 this.started = true;
+            // 注册前后台通知：后台自动停止相机
+                RegisterLifecycleNotifications();
             }
             catch (Exception ex)
             {
@@ -161,6 +167,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
         {
             this.session.StopRunning();
             this.started = false;
+            UnregisterLifecycleNotifications();
         }
         return Task.CompletedTask;
     }
@@ -246,6 +253,7 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
                 {
                     this.session.StopRunning();
                     this.started = false;
+            UnregisterLifecycleNotifications();
                 }
 
                 await this.UpdateCameraAsync();
@@ -257,6 +265,8 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
                 {
                     this.session.StartRunning();
                     this.started = true;
+            // 注册前后台通知：后台自动停止相机
+                RegisterLifecycleNotifications();
                 }
             }
             catch (Exception ex)
@@ -397,6 +407,33 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
         }
 
         return Task.CompletedTask;
+    }
+
+    private void RegisterLifecycleNotifications()
+    {
+        UnregisterLifecycleNotifications();
+        bgObserver = UIApplication.Notifications.ObserveWillResignActive((_, _) =>
+        {
+            wasStartedBeforeBg = started;
+            if (started)
+                _ = StopPreviewAsync();
+        });
+        fgObserver = UIApplication.Notifications.ObserveDidBecomeActive((_, _) =>
+        {
+            if (wasStartedBeforeBg && !started)
+            {
+                wasStartedBeforeBg = false;
+                _ = StartPreviewAsync();
+            }
+        });
+    }
+
+    private void UnregisterLifecycleNotifications()
+    {
+        bgObserver?.Dispose();
+        bgObserver = null;
+        fgObserver?.Dispose();
+        fgObserver = null;
     }
 
     public void Dispose()

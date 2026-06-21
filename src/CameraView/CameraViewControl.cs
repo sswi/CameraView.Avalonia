@@ -478,7 +478,7 @@ public class CameraViewControl : TemplatedControl
         {
             double scale = 1.5 - (0.5 * i / 9.0);
             focusIndicator.RenderTransform = new ScaleTransform(scale, scale);
-            await Task.Delay(16);
+            await Task.Delay(8);
         }
         focusIndicator.RenderTransform = new ScaleTransform(1.0, 1.0);
 
@@ -488,7 +488,7 @@ public class CameraViewControl : TemplatedControl
             double t = p * Math.PI / 30.0;
             double scale = 1.0 + 0.06 * Math.Sin(t);
             focusIndicator.RenderTransform = new ScaleTransform(scale, scale);
-            await Task.Delay(16);
+            await Task.Delay(8);
         }
         focusIndicator.RenderTransform = new ScaleTransform(1.0, 1.0);
 
@@ -496,7 +496,7 @@ public class CameraViewControl : TemplatedControl
         for (int i = 0; i < 12; i++)
         {
             focusIndicator.Opacity = 1.0 - (i / 12.0);
-            await Task.Delay(16);
+            await Task.Delay(8);
         }
         focusIndicator.Opacity = 0.0;
         focusIndicator.IsVisible = false;
