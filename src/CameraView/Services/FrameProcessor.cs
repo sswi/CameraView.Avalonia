@@ -20,24 +20,18 @@ public class FrameProcessor
     {
         try
         {
-            int maxDim = Math.Max(rawFrame.Width, rawFrame.Height);
-            float scale = Math.Min(1f, 960f / maxDim);
-            int newW = Math.Max(1, (int)(rawFrame.Width * scale));
-            int newH = Math.Max(1, (int)(rawFrame.Height * scale));
-
-            using var resized = rawFrame.Resize(
-                new SKImageInfo(newW, newH, SKColorType.Bgra8888),
-                new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            int w = rawFrame.Width;
+            int h = rawFrame.Height;
 
             var wb = new WriteableBitmap(
-                new PixelSize(newW, newH),
+                new PixelSize(w, h),
                 new Vector(96, 96),
                 PixelFormat.Bgra8888,
                 AlphaFormat.Opaque);
 
             using var fb = wb.Lock();
-            var src = resized.GetPixels();
-            var srcRowBytes = resized.RowBytes;
+            var src = rawFrame.GetPixels();
+            var srcRowBytes = rawFrame.RowBytes;
             var dstRowBytes = fb.RowBytes;
             var copyBytes = Math.Min(srcRowBytes, dstRowBytes);
 
@@ -45,7 +39,8 @@ public class FrameProcessor
             {
                 var s = (byte*)src.ToPointer();
                 var d = (byte*)fb.Address.ToPointer();
-                for (int row = 0; row < newH; row++)
+                int rows = Math.Min(h, fb.Size.Height);
+                for (int row = 0; row < rows; row++)
                 {
                     Buffer.MemoryCopy(s, d, copyBytes, copyBytes);
                     s += srcRowBytes;
@@ -58,7 +53,7 @@ public class FrameProcessor
             if (fpsStopwatch.Elapsed.TotalSeconds >= 1.0)
             {
                 double fps = frameCount / fpsStopwatch.Elapsed.TotalSeconds;
-                fpsText = $"{fps:F0} FPS | {newW}x{newH}";
+                fpsText = $"{fps:F0} FPS | {w}x{h}";
                 frameCount = 0;
                 fpsStopwatch.Restart();
                 var f = fpsText;

@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:CameraView.Demo.Views"
+        x:Class="CameraView.Demo.Views.MainWindow"
+        Title="CameraView.Demo"
+        Width="480" Height="800">
+
+    <Grid RowDefinitions="Auto,*">
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="10">
+            <Button Content="普通 UserControl" Click="OnNormalView" />
+            <Button Content="Test ContentPage" Click="OnContentPage" />
+        </StackPanel>
+
+        <ContentControl x:Name="PageHost" Grid.Row="1" />
+    </Grid>
+</Window>

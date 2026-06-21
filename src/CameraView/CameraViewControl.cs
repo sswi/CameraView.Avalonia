@@ -26,6 +26,7 @@ public class CameraViewControl : TemplatedControl
     private readonly FrameProcessor? frameProcessor;
     private DateTime lastOrientationUpdate;
     private bool isFocusing;
+    private DateTime lastPointerActivity = DateTime.MinValue;
 
     // ========================================================================
     //  可绑定属性
@@ -384,6 +385,13 @@ public class CameraViewControl : TemplatedControl
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         var point = e.GetPosition(this);
+        // 超过500ms无触摸则清理残留状态（OnPointerReleased可能未被触发）
+        if ((DateTime.Now - lastPointerActivity).TotalMilliseconds > 500)
+        {
+            isPinching = false;
+            activePointers.Clear();
+        }
+        lastPointerActivity = DateTime.Now;
         activePointers[e.Pointer.Id] = point;
 
         if (activePointers.Count == 1)
@@ -406,6 +414,7 @@ public class CameraViewControl : TemplatedControl
     /// <summary>手指移动：捏合时计算相对缩放比例</summary>
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
+        lastPointerActivity = DateTime.Now;
         if (!PinchToZoomEnabled) return;
 
         if (activePointers.TryGetValue(e.Pointer.Id, out _))
@@ -429,6 +438,7 @@ public class CameraViewControl : TemplatedControl
     /// <summary>手指抬起：判定是否为点击（300ms + 10px 移动）→ 对焦</summary>
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        lastPointerActivity = DateTime.Now;
         activePointers.Remove(e.Pointer.Id);
 
         if (!isPinching && TapToFocusEnabled && activePointers.Count == 0)

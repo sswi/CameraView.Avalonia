@@ -22,7 +22,7 @@
     <!-- NuGet package metadata -->
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageId>CameraView.Avalonia</PackageId>
-    <Version>1.0.4</Version>
+    <Version>1.0.17</Version>
     <PackageIcon>icon.png</PackageIcon>
     <Authors>XE.PAN</Authors>
     <Description>Avalonia 跨平台相机控件 — 支持 Android/iOS/Windows/macOS/Linux/Browser 的相机预览与拍照</Description>
