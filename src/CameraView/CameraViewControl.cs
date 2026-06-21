@@ -218,6 +218,12 @@ public class CameraViewControl : TemplatedControl
             await InitializeCameraAsync(provider);
         }
 
+        // 自动检查/请求权限（Android）
+        var perms = CameraProviderFactory.CreatePermissions(cameraProvider!);
+        if (!await perms.CheckPermissionAsync())
+            if (!await perms.RequestPermissionAsync())
+                return;
+
         IsBusying = true;
         await cameraProvider!.StartPreviewAsync();
         IsBusying = false;

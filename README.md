@@ -98,12 +98,7 @@ CameraView.CameraProviderFactory.SetAndroidActivity(this);
 <uses-permission android:name="android.permission.CAMERA" />
 ```
 
-```csharp
-// 拍照前检查权限
-var perms = CameraProviderFactory.CreatePermissions(provider);
-if (!await perms.CheckPermissionAsync())
-    await perms.RequestPermissionAsync();
-```
+> 💡 `StartCameraAsync` 内部会自动检查并请求相机权限，无需手动调用。
 
 ## 功能
 
