@@ -29,14 +29,19 @@ xmlns:cv="using:CameraView"
 <cv:CameraViewControl x:Name="CameraControl" />
 ```
 
-### 2. 创建 Provider 并启动
+### 2. 启动相机
 
 ```csharp
-// 创建相机提供者
+// 方式一：绑定 CameraEnabled（推荐，自动初始化）
+CameraEnabled = true;
+
+// 方式二：手动初始化并启动（需要 provider 引用时用此方式）
 var provider = CameraProviderFactory.Create();
 await CameraControl.InitializeCameraAsync(provider);
-await CameraControl.StartCameraAsync();
+CameraEnabled = true;  // 自动触发 StartCameraAsync
 ```
+
+> 💡 `CameraEnabled = true` 会自动判断是否需要初始化，无需手动调用 `InitializeCameraAsync`。
 
 ### 3. Windows 项目配置
 
@@ -50,8 +55,8 @@ await CameraControl.StartCameraAsync();
 + <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
 ```
 
-> ⚠️ 多项目结构中，**引用 CameraView 的项目**（如 `ScanTallyApp.Desktop.csproj`）需要改，
-> 不是共享库项目（`ScanTallyApp.csproj` 保持 `net10.0`）。
+> ⚠️ 多项目结构中，**引用 CameraView 的项目**（如 `MyApp.Desktop.csproj`）需要改，
+> 不是共享库项目（`MyApp.csproj` 保持 `net10.0`）。
 
 ### 4. App.axaml — 加载控件模板
 

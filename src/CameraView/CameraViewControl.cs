@@ -207,17 +207,22 @@ public class CameraViewControl : TemplatedControl
         await cameraProvider.InitializeAsync(new CameraOptions { CameraFacing = CameraFacing });
     }
 
-    /// <summary>启动相机预览 + 设备朝向传感器</summary>
+    /// <summary>启动相机预览 + 设备朝向传感器。
+    /// 若尚未初始化，自动调用 InitializeCameraAsync。</summary>
     public async Task StartCameraAsync()
     {
-        if (cameraProvider != null)
+        if (cameraProvider == null)
         {
-            IsBusying = true;
-            await cameraProvider.StartPreviewAsync();
-            IsBusying = false;
-            EnsureOrientationProvider();
-            orientationProvider?.Start();
+            var provider = CameraProvider ?? CameraProviderFactory.Create();
+            if (provider == null) return;
+            await InitializeCameraAsync(provider);
         }
+
+        IsBusying = true;
+        await cameraProvider!.StartPreviewAsync();
+        IsBusying = false;
+        EnsureOrientationProvider();
+        orientationProvider?.Start();
     }
 
     /// <summary>停止预览 + 传感器</summary>
@@ -331,8 +336,13 @@ public class CameraViewControl : TemplatedControl
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == CameraEnabledProperty && cameraProvider != null)
-            _ = change.GetNewValue<bool>() ? cameraProvider.StartPreviewAsync() : cameraProvider.StopPreviewAsync();
+        if (change.Property == CameraEnabledProperty)
+        {
+            if (change.GetNewValue<bool>())
+                _ = StartCameraAsync();
+            else
+                _ = StopCameraAsync();
+        }
         else if (change.Property == TorchOnProperty)
             _ = cameraProvider?.SetTorchAsync(change.GetNewValue<bool>());
         else if (change.Property == RequestZoomFactorProperty)

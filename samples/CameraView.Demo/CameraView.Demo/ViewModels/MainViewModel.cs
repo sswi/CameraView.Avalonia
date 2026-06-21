@@ -136,9 +136,7 @@ public partial class MainViewModel : ViewModelBase
             this.StatusText = "初始化相机…";
             await this.CameraControl.InitializeCameraAsync(this.cameraProvider);
 
-            this.StatusText = "启动预览…";
-            await this.CameraControl.StartCameraAsync();
-
+            // CameraEnabled = true 自动触发 StartCameraAsync（走自动初始化逻辑）
             this.IsCameraRunning = true;
 
             // 填充分辨率列表
