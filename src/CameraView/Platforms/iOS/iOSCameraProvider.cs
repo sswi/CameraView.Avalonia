@@ -127,6 +127,12 @@ internal class iOSCameraProvider : ICameraProvider, ICameraPermissions, ICameraO
         if (this.session == null)
             throw new InvalidOperationException("Camera not initialized.");
 
+        if (!await CheckPermissionAsync())
+        {
+            this.ErrorOccurred?.Invoke(this, "Camera permission denied. Please grant camera access in Settings.");
+            return;
+        }
+
         if (UIDevice.CurrentDevice.Model.Contains("Simulator"))
         {
             this.ErrorOccurred?.Invoke(this, "Camera not available on iOS simulator.");
