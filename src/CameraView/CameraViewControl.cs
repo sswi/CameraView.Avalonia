@@ -386,7 +386,7 @@ public class CameraViewControl : TemplatedControl
     {
         var point = e.GetPosition(this);
         // 超过500ms无触摸则清理残留状态（OnPointerReleased可能未被触发）
-        if ((DateTime.Now - lastPointerActivity).TotalMilliseconds > 500)
+        if ((DateTime.Now - lastPointerActivity).TotalMilliseconds > 300)
         {
             isPinching = false;
             activePointers.Clear();
