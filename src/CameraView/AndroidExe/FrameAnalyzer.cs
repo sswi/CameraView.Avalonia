@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Android.Runtime;
 using AndroidX.Camera.Core;
@@ -12,6 +13,7 @@ namespace CameraView.Platforms.Android;
 public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
 {
     private readonly Action<SKBitmap> onFrameReceived;
+    private int processing;
 
     public FrameAnalyzer(Action<SKBitmap> onFrameReceived)
     {
@@ -24,9 +26,15 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
 
     public void Analyze(IImageProxy proxy)
     {
+        if (Interlocked.CompareExchange(ref processing, 1, 0) != 0)
+        {
+            try { proxy.Close(); } catch { }
+            return;
+        }
+
         try
         {
-            var image = proxy.Image;
+            var image = proxy?.Image;
             if (image == null) return;
 
             int rotationDegrees = proxy.ImageInfo?.RotationDegrees ?? 0;
@@ -63,10 +71,7 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
             {
                 try
                 {
-                    var skBitmap = YuvToSkBitmap(
-                        yData, uData, vData,
-                        width, height,
-                        yRowStride, uvRowStride, uvPixelStride);
+                    var skBitmap = YuvToSkBitmap(yData, uData, vData, width, height, yRowStride, uvRowStride, uvPixelStride);
 
                     if (skBitmap != null)
                     {
@@ -90,6 +95,7 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
                     ArrayPool<byte>.Shared.Return(yData);
                     ArrayPool<byte>.Shared.Return(uData);
                     ArrayPool<byte>.Shared.Return(vData);
+                    Volatile.Write(ref processing, 0);
                 }
             });
         }
@@ -100,22 +106,16 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
         }
     }
 
-    private static unsafe SKBitmap? YuvToSkBitmap(
-        byte[] yData, byte[] uData, byte[] vData,
-        int width, int height,
-        int yRowStride, int uvRowStride, int uvPixelStride)
+    private static unsafe SKBitmap? YuvToSkBitmap(byte[] yData, byte[] uData, byte[] vData, int width, int height, int yRowStride, int uvRowStride, int uvPixelStride)
     {
         var skBitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Opaque);
 
         fixed (byte* pY = yData, pU = uData, pV = vData)
         {
-            var srcY = pY;
-            var srcU = pU;
-            var srcV = pV;
+            var srcY = pY; var srcU = pU; var srcV = pV;
             var dst = (byte*)skBitmap.GetPixels().ToPointer();
             int dstRowBytes = width * 4;
 
-            // Sequential loop – Parallel.For overhead hurts on mobile
             for (int row = 0; row < height; row++)
             {
                 int yRowOff = row * yRowStride;
@@ -146,7 +146,6 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
                 }
             }
         }
-
         return skBitmap;
     }
 
@@ -154,10 +153,10 @@ public class FrameAnalyzer : Java.Lang.Object, ImageAnalysis.IAnalyzer
     private static unsafe void YuvToBgra(int y, int d, int e, byte* dst)
     {
         int c = y - 16;
-        dst[0] = (byte)Clamp((298 * c + 516 * d + 128) >> 8);   // B
-        dst[1] = (byte)Clamp((298 * c - 100 * d - 208 * e + 128) >> 8); // G
-        dst[2] = (byte)Clamp((298 * c + 409 * e + 128) >> 8);   // R
-        dst[3] = 255;                                             // A
+        dst[0] = (byte)Clamp((298 * c + 516 * d + 128) >> 8);
+        dst[1] = (byte)Clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
+        dst[2] = (byte)Clamp((298 * c + 409 * e + 128) >> 8);
+        dst[3] = 255;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

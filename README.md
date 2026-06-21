@@ -129,6 +129,9 @@ private void OnCameraError(string error)
 CameraControl.CameraError += (_, error) => Debug.WriteLine(error);
 ```
 
+
+> 💡 **调试模式性能提示：** Debug 模式下 Mono 解释器/未优化 JIT 会导致 YUV→BGRA 帧转换性能显著降低，预览帧率可能降至 2-8fps。
+> 使用 `Release` 配置（AOT 编译）可获得 25-30fps 流畅预览。
 ## 功能
 
 - [x] 相机预览（实时帧）
