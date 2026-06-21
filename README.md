@@ -69,9 +69,21 @@ CameraEnabled = true;  // 自动触发 StartCameraAsync
 
 ### 5. Android 配置
 
+> ⚠️ Android EXE 项目（如 `MyApp.Android.csproj`）**必须**直接引用 `CameraView.Avalonia`，
+> 仅靠共享库（`net10.0`）间接引用不会触发 `buildTransitive .targets` 注入 Android JNI 文件。
+
+```xml
+<!-- MyApp.Android.csproj -->
+<ItemGroup>
+  <PackageReference Include="CameraView.Avalonia" />
+  <ProjectReference Include="..\MyApp\MyApp.csproj" />
+</ItemGroup>
+```
+
 ```csharp
 // MainActivity.OnCreate — 必须在 base.OnCreate 之前注册
-var provider = new CameraView.Platforms.Android.AndroidCameraProvider(this.BaseContext);
+var context = this.BaseContext;
+var provider = new CameraView.Platforms.Android.AndroidCameraProvider(context);
 CameraView.CameraProviderFactory.RegisterProvider(provider);
 
 base.OnCreate(savedInstanceState);
