@@ -146,3 +146,70 @@ CameraControl.CameraError += (_, error) => Debug.WriteLine(error);
 - [x] 设备朝向传感器（重力方向）
 - [x] 照片 EXIF 方向校正（iOS/Android 拍照时自动旋转像素）
 - [x] 调试模式（显示 FPS）
+
+---
+
+## API 参考
+
+### 依赖属性（可绑定）
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `CameraEnabled` | `bool` | `false` | 开关相机（TwoWay） |
+| `CameraFacing` | `CameraFacing` | `Back` | 前后摄像头（TwoWay） |
+| `IsFrontCamera` | `bool` | `false` | 是否为前置摄像头（TwoWay） |
+| `TorchOn` | `bool` | `false` | 手电筒（TwoWay） |
+| `RequestZoomFactor` | `float?` | `null` | 请求缩放倍率（TwoWay） |
+| `CurrentZoomFactor` | `float?` | `null` | 当前缩放倍率（只读） |
+| `TapToFocusEnabled` | `bool` | `true` | 点击对焦开关（TwoWay） |
+| `PinchToZoomEnabled` | `bool` | `true` | 捏合缩放开关（TwoWay） |
+| `FlashMode` | `FlashMode` | `Auto` | 闪光灯模式（TwoWay） |
+| `PhotoResolution` | `PhotoResolution?` | `null` | 照片分辨率（TwoWay） |
+| `SupportedResolutions` | `IReadOnlyList<PhotoResolution>` | — | 支持的照片分辨率列表（只读） |
+| `ExposureCompensation` | `float` | `0` | 曝光补偿 EV（TwoWay） |
+| `DebugMode` | `bool` | `false` | 调试模式：显示 FPS 叠加层（TwoWay） |
+| `IsCapturingNextFrame` | `bool` | `false` | 触发拍照：设为 true 触发拍照，完成后重置（TwoWay） |
+| `IsBusying` | `bool` | `false` | 忙碌状态：拍照/切换时为 true（OneWayToSource） |
+| `DeviceOrientation` | `DeviceOrientation?` | `null` | 设备朝向原始数据（OneWayToSource） |
+| `OrientationState` | `DeviceOrientationState` | `PortraitUpright` | 设备朝向状态（OneWayToSource） |
+| `PreviewAspectRatio` | `double` | `4/3` | 预览帧宽高比（只读） |
+| `FocusIndicatorStroke` | `IBrush` | `DeepPink` | 对焦圆环颜色（TwoWay） |
+| `FocusIndicatorStrokeThickness` | `double` | `2.0` | 对焦圆环粗细（TwoWay） |
+| `CameraProvider` | `ICameraProvider?` | `null` | 外部注入的相机提供者 |
+| `PhotoCapturedCommand` | `ICommand?` | `null` | 拍照完成命令（参数 `PhotoCaptureResult`） |
+| `ErrorCommand` | `ICommand?` | `null` | 相机错误命令（参数 `string`） |
+
+### 方法
+
+| 方法 | 返回 | 说明 |
+|------|------|------|
+| `InitializeCameraAsync(ICameraProvider)` | `Task` | 初始化相机：注册事件 + 平台初始化 |
+| `StartCameraAsync()` | `Task` | 启动预览（如果未初始化则自动初始化） |
+| `StopCameraAsync()` | `Task` | 停止预览 |
+| `TakePhotoAsync()` | `Task` | 拍照 |
+
+### 事件
+
+| 事件 | 参数 | 说明 |
+|------|------|------|
+| `PhotoCaptured` | `EventHandler<byte[]>` | 拍照完成（JPEG 原始字节） |
+| `CameraError` | `EventHandler<string>` | 相机错误 |
+
+---
+
+## 平台支持
+
+| 功能 | Android | iOS | Windows | macOS | Browser | Linux |
+|------|---------|-----|---------|-------|---------|-------|
+| 相机预览 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 拍照（JPEG） | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 前后摄像头切换 | ✅ | ✅ | ✅ | — | ✅ | — |
+| 点击对焦 | ✅ | ✅ | — | — | — | — |
+| 捏合缩放 | ✅ | ✅ | — | — | — | — |
+| 手电筒 / 闪光灯 | ✅ | ✅ | — | — | — | — |
+| 闪光灯模式 | ✅ | ✅ | ✅ | — | — | — |
+| 曝光补偿 | ✅ | ✅ | — | — | — | — |
+| 拍照分辨率选择 | ✅ | ✅ | ✅ | — | — | — |
+| 设备朝向传感器 | ✅ | ✅ | — | — | — | — |
+| 照片 EXIF 方向校正 | ✅ | ✅ | — | — | — | — |
+| 调试模式（FPS） | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
