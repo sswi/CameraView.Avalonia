@@ -98,7 +98,17 @@ CameraView.CameraProviderFactory.SetAndroidActivity(this);
 <uses-permission android:name="android.permission.CAMERA" />
 ```
 
-> 💡 `StartCameraAsync` 内部会自动检查并请求相机权限，无需手动调用。
+```csharp
+// 启动前手动申请权限
+var perms = CameraProviderFactory.CreatePermissions(provider);
+if (!await perms.CheckPermissionAsync())
+    if (!await perms.RequestPermissionAsync())
+        return; // 无权限，ErrorOccurred 会触发说明
+
+CameraEnabled = true;
+```
+
+无权限时相机启动会失败，通过 `ErrorOccurred` 事件输出错误信息。
 
 ## 功能
 
