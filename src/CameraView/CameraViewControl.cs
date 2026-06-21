@@ -162,6 +162,8 @@ public class CameraViewControl : TemplatedControl
     public event EventHandler<byte[]>? PhotoCaptured;
     /// <summary>相机错误事件</summary>
     public event EventHandler<string>? CameraError;
+    /// <summary>设备朝向变化事件</summary>
+    public event EventHandler<DeviceOrientation>? DeviceOrientationChanged;
 
     // ========================================================================
     //  构造 & 模板绑定
@@ -253,6 +255,7 @@ public class CameraViewControl : TemplatedControl
                 {
                     lastOrientationUpdate = now;
                     DeviceOrientation = o;
+                    DeviceOrientationChanged?.Invoke(this, o);
                     // 推送方向给 provider 用于照片旋转校正（iOS/Android）
                     if (cameraProvider is ICameraOrientationAware aware)
                         aware.UpdateDeviceOrientation(o.State);

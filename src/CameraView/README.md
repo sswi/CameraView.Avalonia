@@ -194,6 +194,7 @@ CameraControl.CameraError += (_, error) => Debug.WriteLine(error);
 |------|------|------|
 | `PhotoCaptured` | `EventHandler<byte[]>` | 拍照完成（JPEG 原始字节） |
 | `CameraError` | `EventHandler<string>` | 相机错误 |
+| `DeviceOrientationChanged` | `EventHandler<DeviceOrientation>` | 设备朝向变化（Pitch/Roll/Yaw + 重力向量） |
 
 ---
 
